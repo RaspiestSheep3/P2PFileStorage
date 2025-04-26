@@ -161,18 +161,18 @@ class SignalingServer:
             row = cursor.fetchone()
             
             ownerUserCode = row[1]
-            totalChunkCount = row[4]
             chunkLocations = json.loads(row[5])
-            fileRequestDataTracker = {"fileID" : fileID, "receivedChunks" : [], "totalChunkCount" : totalChunkCount}
             
             #Setting up file
             folderStoragePath = r"C:\Users\iniga\OneDrive\Programming\P2P Storage\Files To Return"
-            fileSize = row[3]
             fileStorageName = f"{folderStoragePath}/USERCODE-{ownerUserCode}--FILEID-{fileID}.bin"
             with open(fileStorageName, "wb") as fileHandle:
                 fileHandle.truncate()
             
-            
+            cursor.execute("SELECT * FROM filesToRequest WHERE fileID = ?", (fileID,))
+            row = cursor.fetchone()
+            downloadedChunks = set(json.loads(row[1]))
+            chunkCount = int(row[2])
             
             #Requesting chunks
             #Original check
@@ -184,14 +184,12 @@ class SignalingServer:
                 
                 for userCode in userCodes:
                     #Checking if user is online
-                    peerFound = False
                     
                     self.logger.debug(f"CURRENT USER CODE : {userCode} | {userCode[2]}")
                         
                     for peer in self.peers:
                         if(self.peers[peer]["userCode"] == userCode[2]):
                             #They are online
-                            peerFound = True
                             user = userCode[2]
                             break
                             
@@ -204,7 +202,13 @@ class SignalingServer:
                     #!TEMP
                     self.logger.debug(f"OUTPUT OF RequestFileFromUser : {chunkData.decode()}")    
                     self.AddChunkToFile(fileStorageName,chunkIndex,chunkData)
-                    
+                    downloadedChunks.add(chunkIndex)
+            
+            if(len(downloadedChunks) == chunkCount):
+                #Complete
+                cursor.execute("DELETE FROM filesToRequest WHERE fileID = ?", (fileID,))
+                databaseConn.commit()
+            
         except Exception as e:
             self.logger.error(f"Error {e} with fileID {fileID} in RequestFileFromUser")
 
@@ -253,10 +257,12 @@ class SignalingServer:
             cursor = conn.cursor()
             
             #Finding chunk count
-            cursor.execute("SELECT * FROM files WHERE fileID = ?",(fileID))
+            cursor.execute("SELECT * FROM files WHERE fileID = ?",(fileID,))
             chunkCount = cursor.fetchone()[4]
             
-            cursor.execute("INSERT INTO filesToRequest (fileID, downloadedChunks, fileComplete, chunkCount) VALUES (?, ?, ?)", (fileID,json.dumps({}), 0, chunkCount))
+            self.logger.debug(f"{fileID} is of type {type(fileID)}")
+            
+            cursor.execute("INSERT INTO filesToRequest (fileID, downloadedChunks, chunkCount) VALUES (?, ?, ?)", (fileID,json.dumps({}), chunkCount))
             conn.commit()
             
             #!TEMP
@@ -384,7 +390,6 @@ class SignalingServer:
         CREATE TABLE IF NOT EXISTS filesToRequest (
             fileID TEXT NOT NULL UNIQUE,
             downloadedChunks TEXT NOT NULL,
-            fileComplete BOOLEAN NOT NULL,
             chunkCount INTEGER NOT NULL
         )
         ''') 
