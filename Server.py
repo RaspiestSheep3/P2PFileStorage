@@ -171,7 +171,8 @@ class SignalingServer:
             fileStorageName = f"{folderStoragePath}/USERCODE-{ownerUserCode}--FILEID-{fileID}.bin"
             with open(fileStorageName, "wb") as fileHandle:
                 fileHandle.truncate()
-            downloadedChunks = set([])
+            
+            
             
             #Requesting chunks
             #Original check
@@ -250,7 +251,12 @@ class SignalingServer:
             self.logger.debug("FILE ADDED TO REQUEST LIST")
             conn = sqlite3.connect("PeersP2PStorage.db")  
             cursor = conn.cursor()
-            cursor.execute("INSERT INTO filesToRequest (fileID, downloadedChunks, fileComplete) VALUES (?, ?, ?)", (fileID,json.dumps({}), 0))
+            
+            #Finding chunk count
+            cursor.execute("SELECT * FROM files WHERE fileID = ?",(fileID))
+            chunkCount = cursor.fetchone()[4]
+            
+            cursor.execute("INSERT INTO filesToRequest (fileID, downloadedChunks, fileComplete, chunkCount) VALUES (?, ?, ?)", (fileID,json.dumps({}), 0, chunkCount))
             conn.commit()
             
             #!TEMP
@@ -378,7 +384,8 @@ class SignalingServer:
         CREATE TABLE IF NOT EXISTS filesToRequest (
             fileID TEXT NOT NULL UNIQUE,
             downloadedChunks TEXT NOT NULL,
-            fileComplete BOOLEAN NOT NULL
+            fileComplete BOOLEAN NOT NULL,
+            chunkCount INTEGER NOT NULL
         )
         ''') 
        
