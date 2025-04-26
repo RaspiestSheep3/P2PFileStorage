@@ -136,10 +136,22 @@ class SignalingServer:
             peer_socket.close()
 
     def RemoveFromPeers(self, ipPortCode):
-        for peer in self.peers:
-            if(peer == ipPortCode):
-                del self.peers[ipPortCode]
-                break
+        try:
+            for peer in self.peers:
+                if(peer == ipPortCode):
+                    del self.peers[ipPortCode]
+                    break
+        except Exception as e:
+            self.logger.error(f"Error {e} in RemoveFromPeers")
+
+    def AddChunkToFile(self, fileName, chunkIndex, chunkData):
+        try:
+            with open(fileName, "r+b") as fileHandle:
+                offset = chunkIndex * 1024
+                fileHandle.seek(offset)
+                fileHandle.write(chunkData)
+        except Exception as e:
+            self.logger.error(f"Error {e} in AddChunkToFile")
 
     def RequestFileFromUser(self, fileID, databaseConn): #TODO
         try:
@@ -153,7 +165,15 @@ class SignalingServer:
             chunkLocations = json.loads(row[5])
             fileRequestDataTracker = {"fileID" : fileID, "receivedChunks" : [], "totalChunkCount" : totalChunkCount}
             
+            #Setting up file
+            folderStoragePath = r"C:\Users\iniga\OneDrive\Programming\P2P Storage\Files To Return"
+            fileSize = row[3]
+            fileStorageName = f"{folderStoragePath}/USERCODE-{ownerUserCode}--FILEID-{fileID}.bin"
+            with open(fileStorageName, "wb") as fileHandle:
+                fileHandle.truncate()
+            downloadedChunks = set()
             
+            #Requesting chunks
             #Original check
             for chunkLocation in chunkLocations:
                 chunkIndex = chunkLocation["chunkIndex"]
@@ -182,7 +202,7 @@ class SignalingServer:
                     
                     #!TEMP
                     self.logger.debug(f"OUTPUT OF RequestFileFromUser : {chunkData.decode()}")    
-                    
+                    self.AddChunkToFile(fileStorageName,chunkIndex,chunkData)
                     
         except Exception as e:
             self.logger.error(f"Error {e} with fileID {fileID} in RequestFileFromUser")
