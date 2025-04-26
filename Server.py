@@ -71,14 +71,10 @@ class SignalingServer:
         self.logger.addHandler(self.generalLogHandler)    
         self.logger.addHandler(self.errorLogHandler)          
         
-        
-        
     def handle_peer(self, peer_socket):
         try:
             self.logger.debug("Waiting to receive peer info...")  # Debug message
             peer_info = peer_socket.recv(1024).decode()
-            
-            self.logger.info(f"PEER INFO : {peer_info}")
             
             if not peer_info:
                 self.logger.warning("No data received from peer, returning...")
@@ -87,6 +83,13 @@ class SignalingServer:
             self.logger.info(f"Received peer info: {peer_info}")  # Debug message
             peer_info = json.loads(peer_info)
 
+            #Receiving files we need 
+            databaseConnection = sqlite3.connect('PeersP2PStorage.db')
+            cursor = databaseConnection.cursor()
+            
+            threading.Thread(threading.Thread(target= self.RequestFilesFromUser, args = (), daemon=True).start())
+            
+            
             if("type" in peer_info):
                 if(peer_info["type"] == "uploadPing"):
                     self.logger.info("ACCEPTING FILE")
@@ -113,9 +116,6 @@ class SignalingServer:
                 self.logger.info(f"Current peers list: {self.peers}")  # Debug message
                 
                 #Try adding to the database
-                databaseConnection = sqlite3.connect('PeersP2PStorage.db')
-                cursor = databaseConnection.cursor()
-                
                 try:
                     cursor.execute('''
                     INSERT INTO peers (ipAddress, port, userCode, availableSpace)
@@ -135,6 +135,15 @@ class SignalingServer:
         finally:
             peer_socket.close()
 
+    def RequestFilesFromUser(self):
+        databaseConn = sqlite3.connect("PeersP2PStorage.db")
+        cursor = databaseConn.cursor()
+        cursor.execute("SELECT * FROM filesToRequest")
+        rows = cursor.fetchall()
+        for row in rows:
+            self.RequestFileFromUser(row[0])
+        databaseConn.close()
+
     def RemoveFromPeers(self, ipPortCode):
         try:
             for peer in self.peers:
@@ -153,8 +162,9 @@ class SignalingServer:
         except Exception as e:
             self.logger.error(f"Error {e} in AddChunkToFile")
 
-    def RequestFileFromUser(self, fileID, databaseConn): #TODO
+    def RequestFileFromUser(self, fileID):
         try:
+            databaseConn = sqlite3.connect("PeersP2PStorage.db")
             self.logger.debug(f"REQUESTING FILE {fileID}")
             cursor = databaseConn.cursor()
             cursor.execute("SELECT * FROM files WHERE fileID = ?", (fileID,))
@@ -163,24 +173,21 @@ class SignalingServer:
             ownerUserCode = row[1]
             chunkLocations = json.loads(row[5])
             
-            #Setting up file
-            folderStoragePath = r"C:\Users\iniga\OneDrive\Programming\P2P Storage\Files To Return"
-            fileStorageName = f"{folderStoragePath}/USERCODE-{ownerUserCode}--FILEID-{fileID}.bin"
-            with open(fileStorageName, "wb") as fileHandle:
-                fileHandle.truncate()
-            
             cursor.execute("SELECT * FROM filesToRequest WHERE fileID = ?", (fileID,))
             row = cursor.fetchone()
             downloadedChunks = set(json.loads(row[1]))
             chunkCount = int(row[2])
+            fileStorageName = row[3]
             
             #Requesting chunks
-            #Original check
             for chunkLocation in chunkLocations:
                 chunkIndex = chunkLocation["chunkIndex"]
                 userCodes = chunkLocation["userCodes"]
 
                 user = None
+                
+                if(chunkIndex in downloadedChunks):
+                    continue
                 
                 for userCode in userCodes:
                     #Checking if user is online
@@ -207,6 +214,9 @@ class SignalingServer:
             if(len(downloadedChunks) == chunkCount):
                 #Complete
                 cursor.execute("DELETE FROM filesToRequest WHERE fileID = ?", (fileID,))
+                databaseConn.commit()
+            else:
+                cursor.execute("UPDATE filesToRequest SET downloadedChunks = ? WHERE fileID = ?", (json.dumps(list(downloadedChunks)), fileID))
                 databaseConn.commit()
             
         except Exception as e:
@@ -245,11 +255,13 @@ class SignalingServer:
             #Receive chunk data
             chunkData = connectionSocket.recv(1024)
             
+            databaseConn.close()
+            
             return chunkData
             
         except Exception as e:
-            self.logger.error(f"Error {e} in RequestChunkFromUser")
-        
+            self.logger.error(f"Error {e} in RequestChunkFromUser")        
+    
     def AddFileToRequestList(self, fileID): 
         try:
             self.logger.debug("FILE ADDED TO REQUEST LIST")
@@ -258,15 +270,24 @@ class SignalingServer:
             
             #Finding chunk count
             cursor.execute("SELECT * FROM files WHERE fileID = ?",(fileID,))
-            chunkCount = cursor.fetchone()[4]
+            row = cursor.fetchone()
+            ownerUserCode = row[1]
+            chunkCount = row[4]
             
             self.logger.debug(f"{fileID} is of type {type(fileID)}")
             
-            cursor.execute("INSERT INTO filesToRequest (fileID, downloadedChunks, chunkCount) VALUES (?, ?, ?)", (fileID,json.dumps({}), chunkCount))
+            
+            #Generate file for usage
+            folderStoragePath = r"C:\Users\iniga\OneDrive\Programming\P2P Storage\Files To Return"
+            fileStorageName = f"{folderStoragePath}/USERCODE-{ownerUserCode}--FILEID-{fileID}.bin"
+            with open(fileStorageName, "wb") as fileHandle:
+                fileHandle.truncate()
+            
+            cursor.execute("INSERT INTO filesToRequest (fileID, downloadedChunks, chunkCount, fileStorageName) VALUES (?, ?, ?, ?)", (fileID,json.dumps({}), chunkCount, fileStorageName))
             conn.commit()
             
             #!TEMP
-            self.RequestFileFromUser(fileID, conn)
+            self.RequestFileFromUser(fileID)
             
         except sqlite3.IntegrityError:
             self.logger.warning("FileID already in request list")
@@ -274,7 +295,6 @@ class SignalingServer:
             self.logger.error(f"Error {e} in AddFileToRequestList")
         finally:
             conn.close()
-              
 
     def CheckPeersConnected(self):
         while True:
@@ -301,7 +321,7 @@ class SignalingServer:
                     #connectionSocket.setz(10)
                     
                     #Sending each peer a ping to see if they are still contactable
-                    pingMessage = json.dumps({"type": "heartbeat ping", "message": "Are you still there?"}).encode()
+                    pingMessage = json.dumps({"type": "heartbeatPing", "message": "Are you still there?"}).encode()
                     connectionSocket.send(pingMessage)
                     
                     #Receiving a response
@@ -314,10 +334,11 @@ class SignalingServer:
                         #Possible they have disconnected
                         self.logger.info("No response received. Peer may be disconnected.")
                         peersToRemove.append(peer)
-                except Exception as e:
-                    self.logger.error(f"ERROR : {e}")
-                    self.logger.info("Connection failed. It is likely peer has disconnected")
+                except ConnectionRefusedError as e:
+                    self.logger.warning("Connection failed. It is likely peer has disconnected")
                     peersToRemove.append(peer)
+                except Exception as e:
+                    self.logger.error(f"ERROR : {e} in CheckPeersConnected")
 
                 finally:
                     connectionSocket.close()
@@ -390,7 +411,8 @@ class SignalingServer:
         CREATE TABLE IF NOT EXISTS filesToRequest (
             fileID TEXT NOT NULL UNIQUE,
             downloadedChunks TEXT NOT NULL,
-            chunkCount INTEGER NOT NULL
+            chunkCount INTEGER NOT NULL,
+            fileStorageName TEXT NOT NULL
         )
         ''') 
        
@@ -414,7 +436,7 @@ class SignalingServer:
         
         
         #Pinging each peer to check theyre connected - heartbeating
-        #threading.Thread(target=self.CheckPeersConnected, args=()).start()
+        threading.Thread(target=self.CheckPeersConnected, args=()).start()
         
         while True:
             self.logger.info("Waiting for peer connections...")
@@ -677,7 +699,7 @@ class SignalingServer:
         except Exception as e:
             self.logger.error(f"Error {e} in AcceptFileFromPeer")
     
-
+    
 if __name__ == '__main__':
     server = SignalingServer()
     server.start()

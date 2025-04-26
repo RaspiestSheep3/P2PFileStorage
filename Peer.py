@@ -87,7 +87,8 @@ class Peer:
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS fileNameTracker (
             fileID TEXT NOT NULL UNIQUE,
-            fileUserName TEXT NOT NULL UNIQUE
+            fileUserName TEXT NOT NULL UNIQUE,
+            fileExtension TEXT NOT NULL
         )
         ''') 
         
@@ -131,6 +132,9 @@ class Peer:
         
         self.logger.info(f"FILE SIZE {fileSize}")
         
+        #Setting file extension
+        _, fileExtension = os.path.splitext(filePath)
+        
         #Sending request to send files
         serverSocket.send(json.dumps({"type" : "uploadPing", "userCode" : userCode}).encode())
         response = json.loads(serverSocket.recv(64).decode())
@@ -165,7 +169,7 @@ class Peer:
             databaseConnection = sqlite3.connect(f'Peer{userCode}FileDatabse.db')
             cursor = databaseConnection.cursor()
             
-            cursor.execute("INSERT INTO fileNameTracker (fileID, fileUserName) VALUES (?, ?)", (fileIDMessage["fileID"], fileNameUser))
+            cursor.execute("INSERT INTO fileNameTracker (fileID, fileUserName, fileExtension) VALUES (?, ?, ?)", (fileIDMessage["fileID"], fileNameUser, fileExtension))
             databaseConnection.commit()
             databaseConnection.close()
             
@@ -189,6 +193,9 @@ class Peer:
                     peerSocket.send(json.dumps(returnMessage).encode())
                     
                     self.ReceiveChunk(peerSocket)
+                elif(chunkSendRequestDecoded["type"] == "heartbeatPing"):
+                    returnMessage = {"type" : "heartbeatPingConfirmation"}
+                    peerSocket.send(json.dumps(returnMessage).encode())
                 elif(chunkSendRequestDecoded["type"] == "chunkReceiveRequest"):
                     #Sending confirmation back
                     returnMessage = {"type" : "chunkReceiveRequestAccept"}
@@ -274,7 +281,7 @@ if __name__ == '__main__':
     while(True):
         stateInput = input("(S)end, (W)ait, (D)isplay or (R)equest? : ")
         if(stateInput.strip().upper() == "S"):  
-            peer.SendFile("TestFile.txt", "TestFile1")
+            peer.SendFile("TestFile.txt", "TestFile1", "txt")
             print("File Sent!")
         elif(stateInput.strip().upper() == "D"):
             peer.DisplayFiles()
