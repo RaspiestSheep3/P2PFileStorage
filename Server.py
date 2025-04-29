@@ -13,7 +13,7 @@ from Debug import ResetSystem
 
 #!TEMP
 if(input("SHOULD RESET FOLDERS (Y/N): ").strip().upper() == "Y"):
-    ResetSystem.ClearFolders([r"C:\Users\iniga\OneDrive\Programming\P2P Storage\Files To Send",r"C:\Users\iniga\OneDrive\Programming\P2P Storage\Received Files"])
+    ResetSystem.ClearFolders([r"C:\Users\iniga\OneDrive\Programming\P2P Storage\Files To Send",r"C:\Users\iniga\OneDrive\Programming\P2P Storage\Received Files", r"C:\Users\iniga\OneDrive\Programming\P2P Storage\Files To Return"])
 
 #!TEMP
 if(os.path.exists(f"ServerGeneral.log")):
@@ -34,6 +34,8 @@ class SignalingServer:
         self.connectedAddrs = []
         self.completedFileIDs = []
         self.storedRequestedFilesData = []
+        self.timeBetweenReturns = 10
+        self.runningHeartbeatCheck = False
         
         #*LOGGING
         # Create a colored formatter for console output
@@ -136,13 +138,16 @@ class SignalingServer:
             peer_socket.close()
 
     def RequestFilesFromUser(self):
-        databaseConn = sqlite3.connect("PeersP2PStorage.db")
-        cursor = databaseConn.cursor()
-        cursor.execute("SELECT * FROM filesToRequest")
-        rows = cursor.fetchall()
-        for row in rows:
-            self.RequestFileFromUser(row[0])
-        databaseConn.close()
+        try:
+            databaseConn = sqlite3.connect("PeersP2PStorage.db")
+            cursor = databaseConn.cursor()
+            cursor.execute("SELECT * FROM filesToRequest")
+            rows = cursor.fetchall()
+            for row in rows:
+                self.RequestFileFromUser(row[0])
+            databaseConn.close()
+        except Exception as e:
+            self.logger.error(f"Error {e} in RequestFilesFromUser")
 
     def RemoveFromPeers(self, ipPortCode):
         try:
@@ -164,6 +169,7 @@ class SignalingServer:
 
     def RequestFileFromUser(self, fileID):
         try:
+            
             databaseConn = sqlite3.connect("PeersP2PStorage.db")
             self.logger.debug(f"REQUESTING FILE {fileID}")
             cursor = databaseConn.cursor()
@@ -214,13 +220,103 @@ class SignalingServer:
             if(len(downloadedChunks) == chunkCount):
                 #Complete
                 cursor.execute("DELETE FROM filesToRequest WHERE fileID = ?", (fileID,))
+                cursor.execute("INSERT INTO filesToReturn (fileID, ownerUserCode) VALUES (?, ?)", (fileID,ownerUserCode))
                 databaseConn.commit()
+                
+                
             else:
                 cursor.execute("UPDATE filesToRequest SET downloadedChunks = ? WHERE fileID = ?", (json.dumps(list(downloadedChunks)), fileID))
                 databaseConn.commit()
             
         except Exception as e:
             self.logger.error(f"Error {e} with fileID {fileID} in RequestFileFromUser")
+
+    def FileReturner(self):
+        try:
+            while True:
+                time.sleep(self.timeBetweenReturns)
+                #Ping each peer 
+                self.logger.debug(f"HEARBEATCHECKRUNNING : {self.runningHeartbeatCheck}")
+                while(self.runningHeartbeatCheck):
+                    self.logger.debug("Waiting for heartbeating to finish")
+                    time.sleep(0.1) #Making sure we run AFTER check is done
+                for peer in self.peers:   
+                    connectionSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    peerIP = self.peers[peer]["ip"]
+                    peerPort = self.peers[peer]["port"]
+                    userCode = self.peers[peer]["userCode"]
+                    
+                    #Only send to receiver types
+                    self.logger.debug(f"TYPE:  {self.peers[peer]}")
+                    if(self.peers[peer]["joinType"] != "receiver"):
+                        continue
+                    
+                    try:
+                        self.logger.debug(f"IP {peerIP} PORT {peerPort}")
+                        connectionSocket.connect((peerIP,peerPort)) 
+                        self.logger.debug("CONNECTION SUCCEEDED")
+                        #connectionSocket.setz(10)
+                        
+                        databaseConn = sqlite3.connect("PeersP2PStorage.db")
+                        cursor = databaseConn.cursor()
+                        cursor.execute("SELECT * FROM filesToReturn WHERE ownerUserCode = ?", (userCode,))
+                        rows = cursor.fetchall()
+                        self.logger.debug(f"ROWS IN FILERETURNER : {rows}")
+                        for row in rows:
+                            self.logger.info(f"RETURNING FILE {row[0]}")
+                            self.ReturnFile(row[0], row[1])
+                            cursor.execute("DELETE FROM filesToReturn WHERE ownerUserCode = ?", (userCode,))
+                            databaseConn.commit()
+                            
+                            
+                        
+                    except Exception as e:
+                        self.logger.error(f"ERROR : {e} in FileReturner")
+
+                    finally:
+                        connectionSocket.close()
+        except Exception as e:
+            self.logger.error(f"Error {e} in FileReturner")
+
+    def ReturnFile(self, fileID, userCode):
+        try:
+            storageFolderPath = r"C:\Users\iniga\OneDrive\Programming\P2P Storage\Files To Return"
+            filePath = f"{storageFolderPath}/USERCODE-{userCode}--FILEID-{fileID}.bin"
+            with open(filePath, "rb") as fileHandle:
+                self.logger.debug(f"Attempting to return {fileID}")
+                databaseConn = sqlite3.connect("PeersP2PStorage.db")
+                cursor = databaseConn.cursor()
+                
+                cursor.execute("SELECT * FROM peers WHERE userCode = ?", (userCode,))
+                row = cursor.fetchone()
+                userIP = row[0]
+                userPort = row[1]
+                
+                connectionSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                connectionSocket.connect((userIP,userPort))
+                
+                self.logger.debug(f"IP {userIP}, PORT : {userPort}")
+                requestMessage = {"type" : "fileReturnRequest"}
+                requestMessage = json.dumps(requestMessage).encode()
+                self.logger.debug("SENDING REQUEST IN ReturnFile")
+                connectionSocket.send(requestMessage.ljust(64, b" "))
+                self.logger.debug("SENT REQUEST IN ReturnFile")
+                response = connectionSocket.recv(64).decode()
+                self.logger.debug(f"RESPONSE {response} in ReturnFile")
+                response = json.loads(response)
+                if(response) and (response["type"] == "fileReturnRequestAccept"):
+                    #Sending data
+                    for i in range(math.ceil(os.path.getsize(filePath) / 1024)):
+                        chunkData = fileHandle.read(1024)
+                        detailsMessage = json.dumps({"chunkIndex" : i, "chunkLength" : len(chunkData)}).ljust(64)
+                        connectionSocket.send(detailsMessage.encode())
+                        
+                        #Sending chunk
+                        connectionSocket.send(chunkData)
+                        
+                
+        except Exception as e:
+            self.logger.error(f"Error {e} in ReturnFile")
 
     def RequestChunkFromUser(self, targetUserCode, fileID, chunkIndex, ownerUserCode): #TODO
         try:
@@ -296,56 +392,61 @@ class SignalingServer:
         finally:
             conn.close()
 
-    def CheckPeersConnected(self):
+    def PeerHeartbeater(self):
         while True:
             time.sleep(self.timeBetweenHeartbeats)
             self.logger.info(f"PEERS {self.peers}")
             #Ping each peer 
             
-            peersToRemove = []
-            for peer in self.peers:
+            self.CheckPeersConnected()
+
+    def CheckPeersConnected(self):
+        self.runningHeartbeatCheck = True
+        peersToRemove = []
+        for peer in self.peers:
+            
+            connectionSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            peerIP = self.peers[peer]["ip"]
+            peerPort = self.peers[peer]["port"]
+            
+            #Only send to receiver types
+            self.logger.debug(f"TYPE:  {self.peers[peer]}")
+            if(self.peers[peer]["joinType"] != "receiver"):
+                continue
+            
+            try:
+                self.logger.debug(f"IP {peerIP} PORT {peerPort}")
+                connectionSocket.connect((peerIP,peerPort)) 
+                self.logger.debug("CONNECTION SUCCEEDED")
+                #connectionSocket.setz(10)
                 
-                connectionSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                peerIP = self.peers[peer]["ip"]
-                peerPort = self.peers[peer]["port"]
+                #Sending each peer a ping to see if they are still contactable
+                pingMessage = json.dumps({"type": "heartbeatPing", "message": "Are you still there?"}).encode()
+                connectionSocket.send(pingMessage)
                 
-                #Only send to receiver types
-                self.logger.debug(f"TYPE:  {self.peers[peer]}")
-                if(self.peers[peer]["joinType"] != "receiver"):
-                    continue
+                #Receiving a response
+                response = connectionSocket.recv(1024).decode()
                 
-                try:
-                    self.logger.debug(f"IP {peerIP} PORT {peerPort}")
-                    connectionSocket.connect((peerIP,peerPort)) 
-                    self.logger.debug("CONNECTION SUCCEEDED")
-                    #connectionSocket.setz(10)
-                    
-                    #Sending each peer a ping to see if they are still contactable
-                    pingMessage = json.dumps({"type": "heartbeatPing", "message": "Are you still there?"}).encode()
-                    connectionSocket.send(pingMessage)
-                    
-                    #Receiving a response
-                    response = connectionSocket.recv(1024).decode()
-                    
-                    if(response):
-                        #Likely peer is still connected
-                        self.logger.info(f"{self.peers[peer]['name']} is still connected")
-                    else:
-                        #Possible they have disconnected
-                        self.logger.info("No response received. Peer may be disconnected.")
-                        peersToRemove.append(peer)
-                except ConnectionRefusedError as e:
-                    self.logger.warning("Connection failed. It is likely peer has disconnected")
+                if(response):
+                    #Likely peer is still connected
+                    self.logger.info(f"{self.peers[peer]['name']} is still connected")
+                else:
+                    #Possible they have disconnected
+                    self.logger.info("No response received. Peer may be disconnected.")
                     peersToRemove.append(peer)
-                except Exception as e:
-                    self.logger.error(f"ERROR : {e} in CheckPeersConnected")
+            except ConnectionRefusedError as e:
+                self.logger.warning("Connection failed. It is likely peer has disconnected")
+                peersToRemove.append(peer)
+            except Exception as e:
+                self.logger.error(f"ERROR : {e} in CheckPeersConnected")
 
-                finally:
-                    connectionSocket.close()
-                
-            for peerToRemove in peersToRemove:
-                self.RemoveFromPeers(peerToRemove)
+            finally:
+                connectionSocket.close()
+            
+        for peerToRemove in peersToRemove:
+            self.RemoveFromPeers(peerToRemove)
 
+        self.runningHeartbeatCheck = False
     def IncreaseCode(self,code):
         try:
             code = [*code]
@@ -423,6 +524,14 @@ class SignalingServer:
         )
         ''')
         
+        #Tracker of files to return 
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS filesToReturn (
+            fileID TEXT NOT NULL,
+            ownerUserCode TEXT NOT NULL
+        )
+        ''')
+        
         #Making sure we can properly use lastUsedFileID
         cursor.execute("SELECT * FROM lastUsedFileID")
         
@@ -434,9 +543,11 @@ class SignalingServer:
         except Exception as e:
             self.logger.error(f"Error {e} with file Distribution")
         
-        
         #Pinging each peer to check theyre connected - heartbeating
-        threading.Thread(target=self.CheckPeersConnected, args=()).start()
+        threading.Thread(target=self.PeerHeartbeater, args=()).start()
+        
+        #Starting returner
+        threading.Thread(target = self.FileReturner, args = ()).start()
         
         while True:
             self.logger.info("Waiting for peer connections...")
@@ -457,7 +568,6 @@ class SignalingServer:
         connection = sqlite3.connect('PeersP2PStorage.db')
         cursor = connection.cursor()
 
-        # Execute a SELECT query to get all rows from a table (you can also add WHERE conditions to narrow down)
         cursor.execute('SELECT * FROM peers')
     
         # Fetch all rows

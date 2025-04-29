@@ -7,6 +7,7 @@ from cryptography.hazmat.primitives import padding
 import logging
 import colorlog
 import sqlite3
+import math
 
 waitingForFiles = True
 deviceName = datetime.now().strftime("%H:%M:%S")
@@ -88,7 +89,9 @@ class Peer:
         CREATE TABLE IF NOT EXISTS fileNameTracker (
             fileID TEXT NOT NULL UNIQUE,
             fileUserName TEXT NOT NULL UNIQUE,
-            fileExtension TEXT NOT NULL
+            fileName TEXT NOT NULL,
+            fileExtension TEXT NOT NULL,
+            fileSize INTEGER NOT NULL
         )
         ''') 
         
@@ -133,7 +136,8 @@ class Peer:
         self.logger.info(f"FILE SIZE {fileSize}")
         
         #Setting file extension
-        _, fileExtension = os.path.splitext(filePath)
+        filePathBase = os.path.basename(filePath)
+        fileName, fileExtension = os.path.splitext(filePathBase)
         
         #Sending request to send files
         serverSocket.send(json.dumps({"type" : "uploadPing", "userCode" : userCode}).encode())
@@ -169,7 +173,7 @@ class Peer:
             databaseConnection = sqlite3.connect(f'Peer{userCode}FileDatabse.db')
             cursor = databaseConnection.cursor()
             
-            cursor.execute("INSERT INTO fileNameTracker (fileID, fileUserName, fileExtension) VALUES (?, ?, ?)", (fileIDMessage["fileID"], fileNameUser, fileExtension))
+            cursor.execute("INSERT INTO fileNameTracker (fileID, fileUserName, fileName, fileExtension, fileSize) VALUES (?, ?, ?, ?, ?)", (fileIDMessage["fileID"], fileNameUser, fileName, fileExtension, os.path.getsize(filePath)))
             databaseConnection.commit()
             databaseConnection.close()
             
@@ -177,13 +181,41 @@ class Peer:
             
         serverSocket.close()
     
+    def ReceiveReturnFile(self, fileID, connectionSocket):
+        try:
+            #Creating file
+            databaseConn = sqlite3.connect("PeersP2PStorage.db")
+            cursor = databaseConn.cursor()
+            cursor.execute("SELECT * FROM fileNameTracker WHERE fileID = ?", (fileID,))
+            row = cursor.fetchone()
+            fileOutputName = row[2] + row[3]
+            fileOutputPath = r"C:\Users\iniga\OneDrive\Programming\P2P Storage\File Output"
+            
+            with open(f"{fileOutputPath}/{fileOutputName}", "rb") as fileHandle:
+                fileHandle.truncate(row[4])
+                #Receiving data
+                for i in range(math.ceil(row[4] / 1024)):
+                    details = connectionSocket.recv(64)
+                    detailsDecoded = json.loads(details.decode().strip())
+                    
+                    chunkData = connectionSocket.recv(detailsDecoded["chunkLength"])
+                    fileHandle.seek(detailsDecoded["chunkIndex"] * 1024)
+                    fileHandle.write(chunkData)
+        except Exception as e:
+            self.logger.error(f"Error {e} in ReceiveReturnFile")
+                
+    
     def WaitToReceiveChunks(self):
         while True:
             try:
                 #Receiving request
-                peerSocket,_ = self.listenerSocket.accept() #!TEMP
+                peerSocket,_ = self.listenerSocket.accept()
                 self.logger.info(f"Connecting to {self.signalingServerHost}:{self.signalingServerPort}")
                 chunkSendRequest = peerSocket.recv(64)
+                self.logger.info(f"RECEIVED RAW {chunkSendRequest}")
+                chunkSendRequest.rstrip(b" ")
+                if(chunkSendRequest == b""):
+                    continue
                 chunkSendRequestDecoded = json.loads(chunkSendRequest.decode())
                 self.logger.info(f"RECEIVED {chunkSendRequestDecoded}")
             
@@ -196,6 +228,11 @@ class Peer:
                 elif(chunkSendRequestDecoded["type"] == "heartbeatPing"):
                     returnMessage = {"type" : "heartbeatPingConfirmation"}
                     peerSocket.send(json.dumps(returnMessage).encode())
+                elif(chunkSendRequestDecoded["type"] == "fileReturnRequest"):
+                    returnMessage = {"type" : "fileReturnRequestAccept"}
+                    peerSocket.send(json.dumps(returnMessage).encode())
+                    self.ReceiveReturnFile(chunkSendRequestDecoded["fileID"], peerSocket)
+                    
                 elif(chunkSendRequestDecoded["type"] == "chunkReceiveRequest"):
                     #Sending confirmation back
                     returnMessage = {"type" : "chunkReceiveRequestAccept"}
@@ -281,7 +318,7 @@ if __name__ == '__main__':
     while(True):
         stateInput = input("(S)end, (W)ait, (D)isplay or (R)equest? : ")
         if(stateInput.strip().upper() == "S"):  
-            peer.SendFile("TestFile.txt", "TestFile1", "txt")
+            peer.SendFile("TestFile.txt", "TestFile1")
             print("File Sent!")
         elif(stateInput.strip().upper() == "D"):
             peer.DisplayFiles()
