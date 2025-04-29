@@ -109,7 +109,7 @@ class Peer:
             self.peerSocket.send(json.dumps(myInfo).encode())
 
             # Receive the list of known peers
-            peers = self.peerSocket.recv(1024).decode()
+            peers = self.peerSocket.recv(1024).strip(b"\0").decode()
             self.logger.debug(f"Raw received peer list (string): {peers}")  # Debugging step
 
             peers = json.loads(peers)  # Convert the JSON string into a Python dictionary
@@ -141,7 +141,7 @@ class Peer:
         
         #Sending request to send files
         serverSocket.send(json.dumps({"type" : "uploadPing", "userCode" : userCode}).encode())
-        response = json.loads(serverSocket.recv(64).decode())
+        response = json.loads(serverSocket.recv(64).strip(b"\0").decode())
         if (response) and (response["type"] == "uploadPong") and (response["status"] == "accept"):
             #We can send files
 
@@ -167,7 +167,7 @@ class Peer:
                         self.logger.info(f"Sent chunk {chunkIndex + 1}/{totalChunkCount} ({1024} bytes)")
 
             #Receive fileID
-            fileIDMessage = json.loads(serverSocket.recv(64).decode().rstrip("\0"))
+            fileIDMessage = json.loads(serverSocket.recv(64).strip(b"\0").decode())
             self.logger.debug(f"FILE ID MESSAGE : {fileIDMessage}")
             
             databaseConnection = sqlite3.connect(f'Peer{userCode}FileDatabse.db')
@@ -195,7 +195,7 @@ class Peer:
                 fileHandle.truncate(row[4])
                 #Receiving data
                 for i in range(math.ceil(row[4] / 1024)):
-                    details = connectionSocket.recv(64)
+                    details = connectionSocket.recv(64).strip(b"\0")
                     detailsDecoded = json.loads(details.decode().strip())
                     
                     chunkData = connectionSocket.recv(detailsDecoded["chunkLength"])
@@ -211,9 +211,8 @@ class Peer:
                 #Receiving request
                 peerSocket,_ = self.listenerSocket.accept()
                 self.logger.info(f"Connecting to {self.signalingServerHost}:{self.signalingServerPort}")
-                chunkSendRequest = peerSocket.recv(64)
+                chunkSendRequest = peerSocket.recv(64).strip(b"\0")
                 self.logger.info(f"RECEIVED RAW {chunkSendRequest}")
-                chunkSendRequest.rstrip(b" ")
                 if(chunkSendRequest == b""):
                     continue
                 chunkSendRequestDecoded = json.loads(chunkSendRequest.decode())
@@ -240,7 +239,7 @@ class Peer:
                     
                     
                     #Receiving chunk details
-                    chunkDetails = peerSocket.recv(128)
+                    chunkDetails = peerSocket.recv(128).strip("\0")
                     self.logger.debug(f"RAW JSON : {chunkDetails.decode()}")
                     chunkDetailsDecoded = json.loads(chunkDetails.decode())
                     self.logger.debug(f"JSON : {chunkDetailsDecoded}")
