@@ -278,7 +278,7 @@ class SignalingServer:
         except Exception as e:
             self.logger.error(f"Error {e} in FileReturner")
 
-    def ReturnFile(self, fileID, userCode):
+    def ReturnFile(self, fileID, userCode): 
         try:
             storageFolderPath = r"C:\Users\iniga\OneDrive\Programming\P2P Storage\Files To Return"
             filePath = f"{storageFolderPath}/USERCODE-{userCode}--FILEID-{fileID}.bin"
@@ -299,7 +299,7 @@ class SignalingServer:
                 requestMessage = {"type" : "fileReturnRequest"}
                 requestMessage = json.dumps(requestMessage).encode()
                 self.logger.debug("SENDING REQUEST IN ReturnFile")
-                connectionSocket.send(requestMessage.ljust(64, b" "))
+                connectionSocket.send(requestMessage)
                 self.logger.debug("SENT REQUEST IN ReturnFile")
                 response = connectionSocket.recv(64).decode()
                 self.logger.debug(f"RESPONSE {response} in ReturnFile")
@@ -308,11 +308,11 @@ class SignalingServer:
                     #Sending data
                     for i in range(math.ceil(os.path.getsize(filePath) / 1024)):
                         chunkData = fileHandle.read(1024)
-                        detailsMessage = json.dumps({"chunkIndex" : i, "chunkLength" : len(chunkData)}).ljust(64)
-                        connectionSocket.send(detailsMessage.encode())
+                        detailsMessage = json.dumps({"chunkIndex" : i, "chunkLength" : len(chunkData)})
+                        #connectionSocket.send(detailsMessage.encode())
                         
                         #Sending chunk
-                        connectionSocket.send(chunkData)
+                        #connectionSocket.send(chunkData)
                         
                 
         except Exception as e:
@@ -421,7 +421,7 @@ class SignalingServer:
                 #connectionSocket.setz(10)
                 
                 #Sending each peer a ping to see if they are still contactable
-                pingMessage = json.dumps({"type": "heartbeatPing", "message": "Are you still there?"}).encode()
+                pingMessage = json.dumps({"type": "heartbeatPing"}).encode()
                 connectionSocket.send(pingMessage)
                 
                 #Receiving a response
@@ -622,7 +622,7 @@ class SignalingServer:
                 #Send Chunk Data
                 chunkData = {"userCode" : userCode, "chunkIndex" : chunkIndex, "fileID" : fileID}
                 chunkData = json.dumps(chunkData).encode()
-                chunkData = chunkData.ljust(128, b'\0') #Padding to 128 bytes
+                chunkData = chunkData.ljust(128, b' ') #Padding to 128 bytes
                 peerSocket.send(chunkData) 
                 #Send actual chunk
                 peerSocket.send(chunk) #Up to 1024 bytes
@@ -803,7 +803,7 @@ class SignalingServer:
             self.completedFileIDs.append(fileID)
         
             #Sending fileIDMessage    
-            fileIDMessage = json.dumps({"type" : "fileIDSend", "fileID" : fileID}).ljust(64,"\0")
+            fileIDMessage = json.dumps({"type" : "fileIDSend", "fileID" : fileID})
             pConnection.send(fileIDMessage.encode())
         
         except Exception as e:
