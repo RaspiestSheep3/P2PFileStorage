@@ -113,7 +113,7 @@ class SignalingServer:
 
                 # Send the updated peers list to the connecting peer
                 with self.lock:
-                    peer_socket.send(json.dumps(self.peers).encode().ljust(1024, b"\0"))
+                    peer_socket.send(json.dumps(self.peers).encode())
 
                 self.logger.info(f"Current peers list: {self.peers}")  # Debug message
                 
@@ -297,7 +297,7 @@ class SignalingServer:
                 
                 self.logger.debug(f"IP {userIP}, PORT : {userPort}")
                 requestMessage = {"type" : "fileReturnRequest"}
-                requestMessage = json.dumps(requestMessage).encode().ljust(64, b"\0")
+                requestMessage = json.dumps(requestMessage).encode()
                 self.logger.debug("SENDING REQUEST IN ReturnFile")
                 connectionSocket.send(requestMessage)
                 self.logger.debug("SENT REQUEST IN ReturnFile")
@@ -338,7 +338,7 @@ class SignalingServer:
 
             #Sending request
             requestMessage = {"type" : "chunkReceiveRequest"}
-            connectionSocket.send(json.dumps(requestMessage).encode().ljust(64, b"\0"))
+            connectionSocket.send(json.dumps(requestMessage).encode())
             
             response = connectionSocket.recv(64).decode()
             self.logger.debug(f"RESPONSE {response} in RequestChunkFromUser")
@@ -346,7 +346,7 @@ class SignalingServer:
             #Sending details
             #!LABEL
             chunkDetailsMessage = {"chunkIndex" : chunkIndex, "fileID" : fileID, "userCode" : ownerUserCode}
-            connectionSocket.send(json.dumps(chunkDetailsMessage).encode().ljust(128, b"\0"))
+            connectionSocket.send(json.dumps(chunkDetailsMessage).encode())
         
             #Receive chunk data
             chunkData = connectionSocket.recv(1024)
@@ -421,7 +421,7 @@ class SignalingServer:
                 #connectionSocket.setz(10)
                 
                 #Sending each peer a ping to see if they are still contactable
-                pingMessage = json.dumps({"type": "heartbeatPing"}).encode().ljust(64, b"\0")
+                pingMessage = json.dumps({"type": "heartbeatPing"}).encode()
                 connectionSocket.send(pingMessage)
                 
                 #Receiving a response
@@ -612,7 +612,7 @@ class SignalingServer:
             self.logger.debug(f"Server is sending data to {peerSocket.getsockname()}")
             self.logger.debug("TEST 1")
             chunkSendMessage = {"type" : "chunkStoreRequest"}
-            peerSocket.send(json.dumps(chunkSendMessage).encode().ljust(64, b"\0"))
+            peerSocket.send(json.dumps(chunkSendMessage).encode())
             self.logger.debug("SEND REQUEST SUCCEEDED")
             peerSocketReception = peerSocket.recv(64)
             peerSocketReception = json.loads(peerSocketReception.decode())
@@ -738,7 +738,7 @@ class SignalingServer:
     def AcceptFileFromPeer(self, userCode, pConnection):
         try:
             self.logger.info("ACCEPT FROM PEER BEGAN")
-            pConnection.send(json.dumps({"type" : "uploadPong", "status" : "accept"}).ljust(64, b"\0").encode())
+            pConnection.send(json.dumps({"type" : "uploadPong", "status" : "accept"}).encode())
             totalChunkCount = int(pConnection.recv(8).decode())
             receivedChunks = []
             normalChunkIndexes = []
@@ -804,7 +804,7 @@ class SignalingServer:
         
             #Sending fileIDMessage    
             fileIDMessage = json.dumps({"type" : "fileIDSend", "fileID" : fileID})
-            pConnection.send(fileIDMessage.ljust(64, b"\0").encode())
+            pConnection.send(fileIDMessage.encode())
         
         except Exception as e:
             self.logger.error(f"Error {e} in AcceptFileFromPeer")
