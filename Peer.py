@@ -184,19 +184,21 @@ class Peer:
     def ReceiveReturnFile(self, fileID, connectionSocket):
         try:
             #Creating file
-            databaseConn = sqlite3.connect("PeersP2PStorage.db")
+            databaseConn = sqlite3.connect(f'Peer{userCode}FileDatabse.db')
             cursor = databaseConn.cursor()
             cursor.execute("SELECT * FROM fileNameTracker WHERE fileID = ?", (fileID,))
             row = cursor.fetchone()
             fileOutputName = row[2] + row[3]
             fileOutputPath = r"C:\Users\iniga\OneDrive\Programming\P2P Storage\File Output"
             
-            with open(f"{fileOutputPath}/{fileOutputName}", "rb") as fileHandle:
+            with open(f"{fileOutputPath}/{fileOutputName}", "w+b") as fileHandle:
                 fileHandle.truncate(row[4])
                 #Receiving data
                 for i in range(math.ceil(row[4] / 1024)):
-                    details = connectionSocket.recv(64)
+                    details = connectionSocket.recv(64).strip(b"\0")
                     detailsDecoded = json.loads(details.decode().strip())
+                    
+                    self.logger.debug(f"detailsDecoded = {detailsDecoded}")
                     
                     chunkData = connectionSocket.recv(detailsDecoded["chunkLength"])
                     fileHandle.seek(detailsDecoded["chunkIndex"] * 1024)

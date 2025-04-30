@@ -264,7 +264,7 @@ class SignalingServer:
                         self.logger.debug(f"ROWS IN FILERETURNER : {rows}")
                         for row in rows:
                             self.logger.info(f"RETURNING FILE {row[0]}")
-                            self.ReturnFile(row[0], row[1])
+                            self.ReturnFile(row[0], row[1], connectionSocket)
                             cursor.execute("DELETE FROM filesToReturn WHERE ownerUserCode = ?", (userCode,))
                             databaseConn.commit()
                             
@@ -278,7 +278,7 @@ class SignalingServer:
         except Exception as e:
             self.logger.error(f"Error {e} in FileReturner")
 
-    def ReturnFile(self, fileID, userCode): 
+    def ReturnFile(self, fileID, userCode, connectionSocket): 
         try:
             storageFolderPath = r"C:\Users\iniga\OneDrive\Programming\P2P Storage\Files To Return"
             filePath = f"{storageFolderPath}/USERCODE-{userCode}--FILEID-{fileID}.bin"
@@ -292,11 +292,9 @@ class SignalingServer:
                 userIP = row[0]
                 userPort = row[1]
                 
-                connectionSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                connectionSocket.connect((userIP,userPort))
-                
                 self.logger.debug(f"IP {userIP}, PORT : {userPort}")
-                requestMessage = {"type" : "fileReturnRequest"}
+                requestMessage = {"type" : "fileReturnRequest", "fileID" : "AAAA AAAA"}
+                
                 requestMessage = json.dumps(requestMessage).encode()
                 self.logger.debug("SENDING REQUEST IN ReturnFile")
                 connectionSocket.send(requestMessage)
@@ -309,10 +307,10 @@ class SignalingServer:
                     for i in range(math.ceil(os.path.getsize(filePath) / 1024)):
                         chunkData = fileHandle.read(1024)
                         detailsMessage = json.dumps({"chunkIndex" : i, "chunkLength" : len(chunkData)})
-                        #connectionSocket.send(detailsMessage.encode())
+                        connectionSocket.send(detailsMessage.encode().ljust(64, b"\0"))
                         
                         #Sending chunk
-                        #connectionSocket.send(chunkData)
+                        connectionSocket.send(chunkData)
                         
                 
         except Exception as e:
