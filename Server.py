@@ -10,6 +10,7 @@ import math
 import logging
 import colorlog
 from Debug import ResetSystem
+from copy import deepcopy
 
 #!TEMP
 if(input("SHOULD RESET FOLDERS (Y/N): ").strip().upper() == "Y"):
@@ -36,6 +37,7 @@ class SignalingServer:
         self.storedRequestedFilesData = []
         self.timeBetweenReturns = 10
         self.runningHeartbeatCheck = False
+        self.filesToDelete = []
         
         #*LOGGING
         # Create a colored formatter for console output
@@ -101,6 +103,11 @@ class SignalingServer:
                     
                     #Add file to request list   
                     self.AddFileToRequestList(peer_info['fileID'])
+                elif(peer_info["type"] == "deleteRequest"):
+                    self.logger.debug(f"DELETE REQUEST FOR FILE {peer_info['fileID']}")
+                    
+                    #Add file to request list   
+                    self.filesToDelete.append(peer_info['fileID'])
             else:
                 peer_ip = peer_info['ip']
                 peer_port = peer_info['port']
@@ -136,7 +143,60 @@ class SignalingServer:
             self.logger.error(f"Error handling peer: {e}")
         finally:
             peer_socket.close()
+            
+    def FileDeletor(self): #TODO
+        try:
+            databaseConn = sqlite3.connect("PeersP2PStorage.db")
+            cursor = databaseConn.cursor()
+            placeHolders = ", ".join(["?"] * len(self.filesToDelete))
+            cursor.execute(f"SELECT * FROM files WHERE fileID IN ({placeHolders})", tuple(self.filesToDelete))
+            rows = cursor.fetchall()
+            for row in rows:
+                fileID = row[0]
+                chunkLocations = row[5]
+                
+                for chunkIndex in chunkLocations:
+                    locations = chunkLocations[chunkIndex]
+                    for location in locations[:]: #Making shallow copy
+                        userIP = location[0]
+                        userPort = location[1]
+                        if(f"{userIP}:{userPort}" in self.peers):
+                            connectionSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                            connectionSocket.connect((userIP,userPort)) 
+                            fileDeleteSuccess = self.DeleteFile(fileID, userIP, userPort, connectionSocket)
 
+                            if(fileDeleteSuccess):
+                                if location[0] == userIP and location[1] == userPort:
+                                    locations.remove(location)   
+                
+                if(chunkLocations[chunkIndex] == []):
+                    del chunkLocations[chunkIndex]
+                                
+        except Exception as e:
+            self.logger.error(f"Error {e} in FileDeletor")
+        
+
+    def DeleteFile(self, fileID, userIP, userPort, connectionSocket): #TODO
+        try:
+            deleteMessage = {"type": "deleteFileServerRequest","fileID" : fileID}
+            connectionSocket.send(json.dumps(deleteMessage).encode())
+            fileSizeDict = json.loads(connectionSocket.recv(32).decode())
+        
+            #Updating size on SQL
+            databaseConn = sqlite3.connect("PeersP2PStorage.db")
+            cursor = databaseConn.cursor()
+            cursor.execute("SELECT * FROM peers WHERE ipAddress = ? AND port = ?",(userIP, userPort))
+            row = cursor.fetchone()
+            availableSpace = row[3] + fileSizeDict["size"]
+            cursor.execute("UPDATE peers SET availableSpace = ? WHERE ipAddress = ? AND port = ?",(availableSpace, userIP, userPort))
+            databaseConn.commit()
+            databaseConn.close()
+            
+            return True #Success
+        except Exception as e:
+            self.logger.error(f"Error {e} in DeleteFile")
+            return False #Failure
+        
     def RequestFilesFromUser(self):
         try:
             databaseConn = sqlite3.connect("PeersP2PStorage.db")
@@ -178,6 +238,8 @@ class SignalingServer:
             
             ownerUserCode = row[1]
             chunkLocations = json.loads(row[5])
+            
+            self.logger.debug(f"chunkLocations RFFU : {chunkLocations}")
             
             cursor.execute("SELECT * FROM filesToRequest WHERE fileID = ?", (fileID,))
             row = cursor.fetchone()
@@ -342,7 +404,7 @@ class SignalingServer:
             self.logger.debug(f"RESPONSE {response} in RequestChunkFromUser")
             
             #Sending details
-            #!LABEL
+            
             chunkDetailsMessage = {"chunkIndex" : chunkIndex, "fileID" : fileID, "userCode" : ownerUserCode}
             connectionSocket.send(json.dumps(chunkDetailsMessage).encode())
         
@@ -529,6 +591,7 @@ class SignalingServer:
             ownerUserCode TEXT NOT NULL
         )
         ''')
+        
         
         #Making sure we can properly use lastUsedFileID
         cursor.execute("SELECT * FROM lastUsedFileID")

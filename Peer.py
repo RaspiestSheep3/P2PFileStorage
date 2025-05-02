@@ -310,7 +310,22 @@ class Peer:
         serverSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         serverSocket.connect((self.signalingServerHost, self.signalingServerPort))
         serverSocket.send(json.dumps({"type" : "requestPing", "fileID" : fileID}).encode())
+        conn.close()
+    
+    
+    def DeleteFile(self, fileUserName):
+        #Finding actual code in database
+        conn = sqlite3.connect(f"Peer{userCode}FileDatabse.db")
+        cursor = conn.cursor()
+        cursor.execute("SELECT fileID FROM fileNameTracker WHERE fileUserName = ?", (fileUserName,))
+        fileID = cursor.fetchone()[0]
+        conn.close()
         
+        #Sending request
+        serverSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        serverSocket.connect((self.signalingServerHost, self.signalingServerPort))
+        serverSocket.send(json.dumps({"type" : "deleteRequest", "fileID" : fileID}).encode())
+        conn.close()
         
     
 if __name__ == '__main__':
@@ -318,7 +333,7 @@ if __name__ == '__main__':
     peers = peer.connectToServer()
     threading.Thread(target = peer.WaitToReceiveChunks, daemon=True).start()
     while(True):
-        stateInput = input("(S)end, (W)ait, (D)isplay or (R)equest? : ")
+        stateInput = input("(S)end, (W)ait, (D)isplay, (E)rase or (R)equest? : ")
         if(stateInput.strip().upper() == "S"):  
             peer.SendFile("TestFile.txt", "TestFile1")
             print("File Sent!")
@@ -326,3 +341,5 @@ if __name__ == '__main__':
             peer.DisplayFiles()
         elif(stateInput.strip().upper() == "R"):
             peer.RequestFile(input("What is the file name you are requesting? : "))
+        elif(stateInput.strip().upper() == "E"):
+            peer.DeleteFile(input("What is the file name you want to delete : "))
