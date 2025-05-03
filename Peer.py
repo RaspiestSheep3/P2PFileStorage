@@ -82,21 +82,24 @@ class Peer:
 
 
     def SetupSQL(self):
-        databaseConnection = sqlite3.connect(f'Peer{userCode}FileDatabse.db')
-        cursor = databaseConnection.cursor()
-        
-        cursor.execute('''
-        CREATE TABLE IF NOT EXISTS fileNameTracker (
-            fileID TEXT NOT NULL UNIQUE,
-            fileUserName TEXT NOT NULL UNIQUE,
-            fileName TEXT NOT NULL,
-            fileExtension TEXT NOT NULL,
-            fileSize INTEGER NOT NULL
-        )
-        ''') 
-        
-        databaseConnection.commit() 
-        databaseConnection.close()
+        try:
+            databaseConnection = sqlite3.connect(f'Peer{userCode}FileDatabse.db')
+            cursor = databaseConnection.cursor()
+            
+            cursor.execute('''
+            CREATE TABLE IF NOT EXISTS fileNameTracker (
+                fileID TEXT NOT NULL UNIQUE,
+                fileUserName TEXT NOT NULL UNIQUE,
+                fileName TEXT NOT NULL,
+                fileExtension TEXT NOT NULL,
+                fileSize INTEGER NOT NULL
+            )
+            ''') 
+            
+            databaseConnection.commit() 
+            databaseConnection.close()
+        except Exception as e:
+            self.logger.error(f"Error {e} in SetupSQL", exc_info=True)
 
     def connectToServer(self):
         try:
@@ -120,66 +123,69 @@ class Peer:
             self.peerSocket.close()
             return peers
         except Exception as e:
-            self.logger.error(f"Error connecting to server: {e}")
+            self.logger.error(f"Error connecting to server: {e}", exc_info=True)
 
     def SendFile(self, filePath, fileNameUser):
-        serverSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        serverSocket.connect((self.signalingServerHost, self.signalingServerPort))
-        
-        chunkedData = []
-        
-        fileSize = os.path.getsize(filePath)
-        totalChunkCount = fileSize // 1024
-        if(fileSize % 1024 != 0):
-            totalChunkCount += 1
-        
-        self.logger.info(f"FILE SIZE {fileSize}")
-        
-        #Setting file extension
-        filePathBase = os.path.basename(filePath)
-        fileName, fileExtension = os.path.splitext(filePathBase)
-        
-        #Sending request to send files
-        serverSocket.send(json.dumps({"type" : "uploadPing", "userCode" : userCode}).encode())
-        response = json.loads(serverSocket.recv(64).decode())
-        if (response) and (response["type"] == "uploadPong") and (response["status"] == "accept"):
-            #We can send files
+        try:
+            serverSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            serverSocket.connect((self.signalingServerHost, self.signalingServerPort))
+            
+            chunkedData = []
+            
+            fileSize = os.path.getsize(filePath)
+            totalChunkCount = fileSize // 1024
+            if(fileSize % 1024 != 0):
+                totalChunkCount += 1
+            
+            self.logger.info(f"FILE SIZE {fileSize}")
+            
+            #Setting file extension
+            filePathBase = os.path.basename(filePath)
+            fileName, fileExtension = os.path.splitext(filePathBase)
+            
+            #Sending request to send files
+            serverSocket.send(json.dumps({"type" : "uploadPing", "userCode" : userCode}).encode())
+            response = json.loads(serverSocket.recv(64).decode())
+            if (response) and (response["type"] == "uploadPong") and (response["status"] == "accept"):
+                #We can send files
 
-            serverSocket.send(str(totalChunkCount).zfill(8).encode())            
-            
-            with open(filePath,"rb") as fileHandle:
-                for chunkIndex in range(totalChunkCount):
-                        chunk = fileHandle.read(1024)
-                        
-                        #Padding
-                        if(len(chunk) < 1024):
-                            padder = padding.PKCS7(128).padder()
-                            chunk = padder.update(chunk)  # Apply the padding
-                            chunk += padder.finalize()  # Finalize padding to make the chunk a multiple of 128 bytes
-                            while len(chunk) < 1024:
-                                chunk += b"\0" * (1024 - len(chunk))  # This is just to get to 1024 bytes
-                        
-                        chunkedData.append(chunk)
-                        
-                        # Send chunk number
-                        serverSocket.send(str(chunkIndex).zfill(8).encode())  # Send chunk number
-                        serverSocket.send(chunk)  # Send data chunk
-                        self.logger.info(f"Sent chunk {chunkIndex + 1}/{totalChunkCount} ({1024} bytes)")
+                serverSocket.send(str(totalChunkCount).zfill(8).encode())            
+                
+                with open(filePath,"rb") as fileHandle:
+                    for chunkIndex in range(totalChunkCount):
+                            chunk = fileHandle.read(1024)
+                            
+                            #Padding
+                            if(len(chunk) < 1024):
+                                padder = padding.PKCS7(128).padder()
+                                chunk = padder.update(chunk)  # Apply the padding
+                                chunk += padder.finalize()  # Finalize padding to make the chunk a multiple of 128 bytes
+                                while len(chunk) < 1024:
+                                    chunk += b"\0" * (1024 - len(chunk))  # This is just to get to 1024 bytes
+                            
+                            chunkedData.append(chunk)
+                            
+                            # Send chunk number
+                            serverSocket.send(str(chunkIndex).zfill(8).encode())  # Send chunk number
+                            serverSocket.send(chunk)  # Send data chunk
+                            self.logger.info(f"Sent chunk {chunkIndex + 1}/{totalChunkCount} ({1024} bytes)")
 
-            #Receive fileID
-            fileIDMessage = json.loads(serverSocket.recv(64).decode().rstrip("\0"))
-            self.logger.debug(f"FILE ID MESSAGE : {fileIDMessage}")
-            
-            databaseConnection = sqlite3.connect(f'Peer{userCode}FileDatabse.db')
-            cursor = databaseConnection.cursor()
-            
-            cursor.execute("INSERT INTO fileNameTracker (fileID, fileUserName, fileName, fileExtension, fileSize) VALUES (?, ?, ?, ?, ?)", (fileIDMessage["fileID"], fileNameUser, fileName, fileExtension, os.path.getsize(filePath)))
-            databaseConnection.commit()
-            databaseConnection.close()
-            
-            self.logger.debug("UPDATED DATABASE")
-            
-        serverSocket.close()
+                #Receive fileID
+                fileIDMessage = json.loads(serverSocket.recv(64).decode().rstrip("\0"))
+                self.logger.debug(f"FILE ID MESSAGE : {fileIDMessage}")
+                
+                databaseConnection = sqlite3.connect(f'Peer{userCode}FileDatabse.db')
+                cursor = databaseConnection.cursor()
+                
+                cursor.execute("INSERT INTO fileNameTracker (fileID, fileUserName, fileName, fileExtension, fileSize) VALUES (?, ?, ?, ?, ?)", (fileIDMessage["fileID"], fileNameUser, fileName, fileExtension, os.path.getsize(filePath)))
+                databaseConnection.commit()
+                databaseConnection.close()
+                
+                self.logger.debug("UPDATED DATABASE")
+                
+            serverSocket.close()
+        except Exception as e:
+            self.logger.error(f"Error {e} in SendFile", exc_info=True)
     
     def ReceiveReturnFile(self, fileID, connectionSocket):
         try:
@@ -204,7 +210,7 @@ class Peer:
                     fileHandle.seek(detailsDecoded["chunkIndex"] * 1024)
                     fileHandle.write(chunkData)
         except Exception as e:
-            self.logger.error(f"Error {e} in ReceiveReturnFile")
+            self.logger.error(f"Error {e} in ReceiveReturnFile", exc_info=True)
                 
     
     def WaitToReceiveChunks(self):
@@ -215,7 +221,7 @@ class Peer:
                 self.logger.info(f"Connecting to {self.signalingServerHost}:{self.signalingServerPort}")
                 chunkSendRequest = peerSocket.recv(64)
                 self.logger.info(f"RECEIVED RAW {chunkSendRequest}")
-                chunkSendRequest.rstrip(b" ")
+                chunkSendRequest = chunkSendRequest.rstrip(b"\0")
                 if(chunkSendRequest == b""):
                     continue
                 chunkSendRequestDecoded = json.loads(chunkSendRequest.decode())
@@ -234,12 +240,15 @@ class Peer:
                     returnMessage = {"type" : "fileReturnRequestAccept"}
                     peerSocket.send(json.dumps(returnMessage).encode())
                     self.ReceiveReturnFile(chunkSendRequestDecoded["fileID"], peerSocket)
+                elif(chunkSendRequestDecoded["type"] == "deleteFileServerRequest"):
                     
+                    returnMessage = {"type" : "deleteFileServerRequestAccept"}
+                    peerSocket.send(json.dumps(returnMessage).encode())
+                    self.DeleteChunk(peerSocket)
                 elif(chunkSendRequestDecoded["type"] == "chunkReceiveRequest"):
                     #Sending confirmation back
                     returnMessage = {"type" : "chunkReceiveRequestAccept"}
                     peerSocket.send(json.dumps(returnMessage).encode())
-                    
                     
                     #Receiving chunk details
                     chunkDetails = peerSocket.recv(128)
@@ -260,10 +269,35 @@ class Peer:
                     
 
             except Exception as e:
-                self.logger.error(f"RECEIEVED ERROR {e} IN WaitToReceiveChunks")
+                self.logger.error(f"RECEIEVED ERROR {e} IN WaitToReceiveChunks", exc_info=True)
             finally:
                 peerSocket.close()
         
+    def DeleteChunk(self, connectionSocket):
+        try:
+            messageRaw = connectionSocket.recv(64).strip(b"\0").decode()
+            self.logger.debug(f"messageRaw in DeleteChunk : {messageRaw}")
+            message = json.loads(messageRaw)
+            fileID = message["fileID"]
+            chunkIndex = message["chunkIndex"]
+            
+            #Finding file
+            folderPath = r"C:\Users\iniga\OneDrive\Programming\P2P Storage\Received Files"
+            files = [f for f in os.listdir(folderPath) if os.path.isfile(os.path.join(folderPath, f))]
+            
+            for file in files[:]:
+                if(f"FILEID-{fileID}" in file) and (f"INDEX-{chunkIndex}" in file):
+                    #Delete file
+                    fileSize = os.path.getsize(f"{folderPath}/{file}")
+                    os.remove(f"{folderPath}/{file}")
+                    
+                    #Sending data
+                    sizeMessage = {"size" : fileSize}
+                    connectionSocket.send(json.dumps(sizeMessage).encode())
+                    
+        except Exception as e:
+            self.logger.error(f"Error {e} in DeleteChunk", exc_info=True)
+    
     def ReceiveChunk(self, peerSocket):
         try:
             #Chunk data
@@ -282,51 +316,62 @@ class Peer:
             with open(f'{folderWritePath}/{userCode}--CODE-{chunkData["userCode"]}--INDEX-{chunkData["chunkIndex"]}--FILEID-{chunkData["fileID"]}.bin', "wb") as fileHandle:
                 fileHandle.write(chunk) 
         except Exception as e:
-                   self.logger.error(f"Error {e} in RecieveChunk")
+                   self.logger.error(f"Error {e} in RecieveChunk", exc_info=True)
     
     
     def DisplayFiles(self):
-        conn = sqlite3.connect(f"Peer{userCode}FileDatabse.db")
-        cursor = conn.cursor()
-        cursor.execute(f"SELECT * FROM fileNameTracker")
-        rows = cursor.fetchall()
-        print("=" * 30)
-        print("CURRENT FILES : ")
-        for row in rows:
-            print(row[1])
-        print("=" * 30)
-        conn.close()
-    
+        try:
+            conn = sqlite3.connect(f"Peer{userCode}FileDatabse.db")
+            cursor = conn.cursor()
+            cursor.execute(f"SELECT * FROM fileNameTracker")
+            rows = cursor.fetchall()
+            print("=" * 30)
+            print("CURRENT FILES : ")
+            for row in rows:
+                print(row[1])
+            print("=" * 30)
+            conn.close()
+        except Exception as e:
+            self.logger.error(f"Error {e} in DisplayFiles", exc_info=True)
     
     def RequestFile(self, fileUserName):
-        #Finding actual code in database
-        conn = sqlite3.connect(f"Peer{userCode}FileDatabse.db")
-        cursor = conn.cursor()
-        cursor.execute("SELECT fileID FROM fileNameTracker WHERE fileUserName = ?", (fileUserName,))
-        fileID = cursor.fetchone()[0]
-        conn.close()
-        
-        #Sending request
-        serverSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        serverSocket.connect((self.signalingServerHost, self.signalingServerPort))
-        serverSocket.send(json.dumps({"type" : "requestPing", "fileID" : fileID}).encode())
-        conn.close()
+        try:
+            #Finding actual code in database
+            conn = sqlite3.connect(f"Peer{userCode}FileDatabse.db")
+            cursor = conn.cursor()
+            cursor.execute("SELECT fileID FROM fileNameTracker WHERE fileUserName = ?", (fileUserName,))
+            fileID = cursor.fetchone()[0]
+            conn.close()
+            
+            #Sending request
+            serverSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            serverSocket.connect((self.signalingServerHost, self.signalingServerPort))
+            serverSocket.send(json.dumps({"type" : "requestPing", "fileID" : fileID}).encode())
+            conn.close()
+        except Exception as e:
+            self.logger.error(f"Error {e} in RequestFile", exc_info=True)
     
     
     def DeleteFile(self, fileUserName):
-        #Finding actual code in database
-        conn = sqlite3.connect(f"Peer{userCode}FileDatabse.db")
-        cursor = conn.cursor()
-        cursor.execute("SELECT fileID FROM fileNameTracker WHERE fileUserName = ?", (fileUserName,))
-        fileID = cursor.fetchone()[0]
-        conn.close()
-        
-        #Sending request
-        serverSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        serverSocket.connect((self.signalingServerHost, self.signalingServerPort))
-        serverSocket.send(json.dumps({"type" : "deleteRequest", "fileID" : fileID}).encode())
-        conn.close()
-        
+        try:
+            #Finding actual code in database
+            conn = sqlite3.connect(f"Peer{userCode}FileDatabse.db")
+            cursor = conn.cursor()
+            cursor.execute("SELECT fileID FROM fileNameTracker WHERE fileUserName = ?", (fileUserName,))
+            fileID = cursor.fetchone()[0]
+            
+            #Removing from database
+            cursor.execute("DELETE FROM fileNameTracker WHERE fileID = ?", (fileID,))
+            conn.commit()
+            conn.close()
+            
+            #Sending request
+            serverSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            serverSocket.connect((self.signalingServerHost, self.signalingServerPort))
+            serverSocket.send(json.dumps({"type" : "deleteRequest", "fileID" : fileID}).encode())
+            conn.close()
+        except Exception as e:
+            self.logger.error(f"Error {e} in DeleteFile", exc_info=True)
     
 if __name__ == '__main__':
     peer = Peer(name=deviceName)

@@ -10,7 +10,6 @@ import math
 import logging
 import colorlog
 from Debug import ResetSystem
-from copy import deepcopy
 
 #!TEMP
 if(input("SHOULD RESET FOLDERS (Y/N): ").strip().upper() == "Y"):
@@ -136,65 +135,96 @@ class SignalingServer:
                     self.logger.warning(f"Database Error: {e}")
                     self.logger.warning("User already in database")
                 except Exception as e:  # Catch any other exceptions
-                    self.logger.error(f"Unexpected Error: {e}")
+                    self.logger.error(f"Unexpected Error: {e}", exc_info=True)
                 finally:
                     databaseConnection.close()
         except Exception as e:
-            self.logger.error(f"Error handling peer: {e}")
+            self.logger.error(f"Error handling peer: {e}", exc_info=True)
         finally:
             peer_socket.close()
             
     def FileDeletor(self): #TODO
         try:
-            databaseConn = sqlite3.connect("PeersP2PStorage.db")
-            cursor = databaseConn.cursor()
-            placeHolders = ", ".join(["?"] * len(self.filesToDelete))
-            cursor.execute(f"SELECT * FROM files WHERE fileID IN ({placeHolders})", tuple(self.filesToDelete))
-            rows = cursor.fetchall()
-            for row in rows:
-                fileID = row[0]
-                chunkLocations = row[5]
-                
-                for chunkIndex in chunkLocations:
-                    locations = chunkLocations[chunkIndex]
-                    for location in locations[:]: #Making shallow copy
-                        userIP = location[0]
-                        userPort = location[1]
-                        if(f"{userIP}:{userPort}" in self.peers):
-                            connectionSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                            connectionSocket.connect((userIP,userPort)) 
-                            fileDeleteSuccess = self.DeleteFile(fileID, userIP, userPort, connectionSocket)
-
-                            if(fileDeleteSuccess):
-                                if location[0] == userIP and location[1] == userPort:
-                                    locations.remove(location)   
-                
-                if(chunkLocations[chunkIndex] == []):
-                    del chunkLocations[chunkIndex]
+            while True:
+                time.sleep(10)
+                self.logger.debug("TRYING TO DELETE FILES")
+                databaseConn = sqlite3.connect("PeersP2PStorage.db")
+                cursor = databaseConn.cursor()
+                placeHolders = ", ".join(["?"] * len(self.filesToDelete))
+                cursor.execute(f"SELECT * FROM files WHERE fileID IN ({placeHolders})", tuple(self.filesToDelete))
+                rows = cursor.fetchall()
+                for row in rows:
+                    fileID = row[0]
+                    chunkLocations = json.loads(row[5])
+                    
+                    self.logger.debug(f"DELETING FILE {fileID}")
+                    self.logger.debug(f"ROW : {row}, LOCATIONS : {chunkLocations}")
+                    
+                    for chunkIndex in chunkLocations[:]:
+                        self.logger.debug(f"index is {chunkIndex['chunkIndex']}")
+                        self.logger.debug(f"locations 1 {chunkIndex['userCodes']}")
+                        locations = chunkIndex["userCodes"]
+                        for location in locations[:]: #Making shallow copy
+                            self.logger.debug(f"location is {location}")
+                            self.logger.debug(f"locations 2 are {locations}")
+                            userIP = location[0]
+                            userPort = location[1]
+                            if(f"{userIP}:{userPort}" in self.peers):
+                                connectionSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                                connectionSocket.connect((userIP,userPort)) 
+                                fileDeleteSuccess = self.DeleteFile(fileID, userIP, userPort, connectionSocket, chunkIndex["chunkIndex"])
+                                if(fileDeleteSuccess):
+                                    if location[0] == userIP and location[1] == userPort:
+                                        locations.remove(location)  
                                 
+                                connectionSocket.close()
+                    
+                        if(locations == []):
+                            chunkLocations.remove(chunkIndex)
+                            self.logger.debug(f"Removing index {chunkIndex['chunkIndex']}")
+                
+                    if(chunkLocations == []):
+                        self.logger.debug("chunkLocations is clear")
+                        #Removing from everything else
+                        self.filesToDelete.remove(fileID)
+                        cursor.execute("DELETE FROM files WHERE fileID = ?", (fileID,))
+                        databaseConn.commit()
+
+                        
         except Exception as e:
-            self.logger.error(f"Error {e} in FileDeletor")
+            self.logger.error(f"Error {e} in FileDeletor", exc_info=True)
         
 
-    def DeleteFile(self, fileID, userIP, userPort, connectionSocket): #TODO
+    def DeleteFile(self, fileID, userIP, userPort, connectionSocket, chunkIndex): #TODO
         try:
-            deleteMessage = {"type": "deleteFileServerRequest","fileID" : fileID}
-            connectionSocket.send(json.dumps(deleteMessage).encode())
-            fileSizeDict = json.loads(connectionSocket.recv(32).decode())
-        
-            #Updating size on SQL
-            databaseConn = sqlite3.connect("PeersP2PStorage.db")
-            cursor = databaseConn.cursor()
-            cursor.execute("SELECT * FROM peers WHERE ipAddress = ? AND port = ?",(userIP, userPort))
-            row = cursor.fetchone()
-            availableSpace = row[3] + fileSizeDict["size"]
-            cursor.execute("UPDATE peers SET availableSpace = ? WHERE ipAddress = ? AND port = ?",(availableSpace, userIP, userPort))
-            databaseConn.commit()
-            databaseConn.close()
+            self.logger.debug(f"chunkIndex in DELETEFILE : {chunkIndex}")
+            deleteMessage = {"type": "deleteFileServerRequest"}
+            connectionSocket.send(json.dumps(deleteMessage).encode().ljust(64, b"\0"))
             
-            return True #Success
+            response = json.loads(connectionSocket.recv(64).decode())
+            if(response) and (response["type"] == "deleteFileServerRequestAccept"):
+                infoMessage = {"fileID" : fileID, "chunkIndex" : chunkIndex}
+                self.logger.debug(f"INFOMESSAGE : {infoMessage}")
+                connectionSocket.send(json.dumps(infoMessage).encode().ljust(64, b"\0"))
+                fileSizeRaw = connectionSocket.recv(32).decode()
+                self.logger.debug(f"RAW SIZE IN DELETEFILE : {fileSizeRaw}")
+                fileSizeDict = json.loads(fileSizeRaw)
+            
+                #Updating size on SQL
+                databaseConn = sqlite3.connect("PeersP2PStorage.db")
+                cursor = databaseConn.cursor()
+                cursor.execute("SELECT * FROM peers WHERE ipAddress = ? AND port = ?",(userIP, userPort))
+                row = cursor.fetchone()
+                availableSpace = row[3] + fileSizeDict["size"]
+                cursor.execute("UPDATE peers SET availableSpace = ? WHERE ipAddress = ? AND port = ?",(availableSpace, userIP, userPort))
+                databaseConn.commit()
+                databaseConn.close()
+            
+                return True #Success
+            else:
+                return False
         except Exception as e:
-            self.logger.error(f"Error {e} in DeleteFile")
+            self.logger.error(f"Error {e} in DeleteFile", exc_info=True)
             return False #Failure
         
     def RequestFilesFromUser(self):
@@ -207,7 +237,7 @@ class SignalingServer:
                 self.RequestFileFromUser(row[0])
             databaseConn.close()
         except Exception as e:
-            self.logger.error(f"Error {e} in RequestFilesFromUser")
+            self.logger.error(f"Error {e} in RequestFilesFromUser" , exc_info=True)
 
     def RemoveFromPeers(self, ipPortCode):
         try:
@@ -216,7 +246,7 @@ class SignalingServer:
                     del self.peers[ipPortCode]
                     break
         except Exception as e:
-            self.logger.error(f"Error {e} in RemoveFromPeers")
+            self.logger.error(f"Error {e} in RemoveFromPeers" , exc_info=True)
 
     def AddChunkToFile(self, fileName, chunkIndex, chunkData):
         try:
@@ -225,7 +255,7 @@ class SignalingServer:
                 fileHandle.seek(offset)
                 fileHandle.write(chunkData)
         except Exception as e:
-            self.logger.error(f"Error {e} in AddChunkToFile")
+            self.logger.error(f"Error {e} in AddChunkToFile" , exc_info=True)
 
     def RequestFileFromUser(self, fileID):
         try:
@@ -291,7 +321,7 @@ class SignalingServer:
                 databaseConn.commit()
             
         except Exception as e:
-            self.logger.error(f"Error {e} with fileID {fileID} in RequestFileFromUser")
+            self.logger.error(f"Error {e} with fileID {fileID} in RequestFileFromUser" , exc_info=True)
 
     def FileReturner(self):
         try:
@@ -333,12 +363,12 @@ class SignalingServer:
                             
                         
                     except Exception as e:
-                        self.logger.error(f"ERROR : {e} in FileReturner")
+                        self.logger.error(f"ERROR : {e} in FileReturner", exc_info=True)
 
                     finally:
                         connectionSocket.close()
         except Exception as e:
-            self.logger.error(f"Error {e} in FileReturner")
+            self.logger.error(f"Error {e} in FileReturner", exc_info=True)
 
     def ReturnFile(self, fileID, userCode, connectionSocket): 
         try:
@@ -376,7 +406,7 @@ class SignalingServer:
                         
                 
         except Exception as e:
-            self.logger.error(f"Error {e} in ReturnFile")
+            self.logger.error(f"Error {e} in ReturnFile", exc_info=True)
 
     def RequestChunkFromUser(self, targetUserCode, fileID, chunkIndex, ownerUserCode): #TODO
         try:
@@ -416,7 +446,7 @@ class SignalingServer:
             return chunkData
             
         except Exception as e:
-            self.logger.error(f"Error {e} in RequestChunkFromUser")        
+            self.logger.error(f"Error {e} in RequestChunkFromUser", exc_info=True)        
     
     def AddFileToRequestList(self, fileID): 
         try:
@@ -448,7 +478,7 @@ class SignalingServer:
         except sqlite3.IntegrityError:
             self.logger.warning("FileID already in request list")
         except Exception as e:
-            self.logger.error(f"Error {e} in AddFileToRequestList")
+            self.logger.error(f"Error {e} in AddFileToRequestList", exc_info=True)
         finally:
             conn.close()
 
@@ -498,7 +528,7 @@ class SignalingServer:
                 self.logger.warning("Connection failed. It is likely peer has disconnected")
                 peersToRemove.append(peer)
             except Exception as e:
-                self.logger.error(f"ERROR : {e} in CheckPeersConnected")
+                self.logger.error(f"ERROR : {e} in CheckPeersConnected", exc_info=True)
 
             finally:
                 connectionSocket.close()
@@ -531,7 +561,7 @@ class SignalingServer:
 
             return codeOutput
         except Exception as e:
-            self.logger.error(f"Error in FileID increase : {e}")
+            self.logger.error(f"Error in FileID increase : {e}", exc_info=True)
             return None
 
     def start(self):
@@ -602,13 +632,15 @@ class SignalingServer:
         try:
             threading.Thread(target= self.FileDistributor, args = (r"C:\Users\iniga\OneDrive\Programming\P2P Storage\Files To Send", ), daemon=True).start()
         except Exception as e:
-            self.logger.error(f"Error {e} with file Distribution")
+            self.logger.error(f"Error {e} with file Distribution", exc_info=True)
         
         #Pinging each peer to check theyre connected - heartbeating
         threading.Thread(target=self.PeerHeartbeater, args=()).start()
         
         #Starting returner
         threading.Thread(target = self.FileReturner, args = ()).start()
+        
+        threading.Thread(target = self.FileDeletor, args = ()).start()
         
         while True:
             self.logger.info("Waiting for peer connections...")
@@ -696,7 +728,8 @@ class SignalingServer:
     
     def FileDistributor(self, folderFilePath):
         try:
-            while True:
+            while True: 
+                
                 #Loop through all files
                 self.logger.debug("LOOPING THROUGH FILES TO DISTRIBUTE")
                 counter = 0
@@ -723,7 +756,7 @@ class SignalingServer:
                 time.sleep(10)
         
         except Exception as e:
-            self.logger.error(f"Error {e} in FileDistributor")
+            self.logger.error(f"Error {e} in FileDistributor", exc_info=True)
     
     def DistributeFileToPeers(self, fileName, filePath):
         try:
@@ -787,11 +820,11 @@ class SignalingServer:
                         self.logger.debug("TEST 4")
                         
                     except Exception as e:
-                        self.logger.error(f"ERROR {e} UPDATING files in DistributeFileToPeers")
+                        self.logger.error(f"ERROR {e} UPDATING files in DistributeFileToPeers", exc_info=True)
 
                 self.logger.debug(f"CHUNKS SENT CHECK: {chunksSent}")
         except Exception as e:
-            self.logger.error(f"Error {e} in DistributeFileToPeers")
+            self.logger.error(f"Error {e} in DistributeFileToPeers", exc_info=True)
         finally:
             conn.close()
             return chunksSent
@@ -819,7 +852,7 @@ class SignalingServer:
                             chunk = unpadder.update(chunk.rstrip(b"\0")) + unpadder.finalize()
                             self.logger.debug("UNPADDED")
                         except ValueError as e:
-                            self.logger.error(f"Unpadding error: {e}")
+                            self.logger.error(f"Unpadding error: {e}", exc_info=True)
                     
                     self.logger.debug(f"FINAL")
                     normalChunkIndexes.append(chunkIndex)
@@ -868,7 +901,7 @@ class SignalingServer:
             pConnection.send(fileIDMessage.encode())
         
         except Exception as e:
-            self.logger.error(f"Error {e} in AcceptFileFromPeer")
+            self.logger.error(f"Error {e} in AcceptFileFromPeer", exc_info=True)
     
     
 if __name__ == '__main__':
