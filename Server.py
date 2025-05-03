@@ -30,13 +30,16 @@ class SignalingServer:
         self.lock = threading.Lock()  # Lock to ensure thread safety for shared data
         self.timeBetweenHeartbeats = 10
         self.spacePerPeerMB = 1024
-        self.redundancyValue = 0 #1 Redundancy Peer
+        self.redundancyValue = 0
         self.connectedAddrs = []
         self.completedFileIDs = []
         self.storedRequestedFilesData = []
         self.timeBetweenReturns = 10
         self.runningHeartbeatCheck = False
         self.filesToDelete = []
+        self.shuttingDown = False
+        self.threads = []
+        self.serverSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         
         #*LOGGING
         # Create a colored formatter for console output
@@ -73,7 +76,33 @@ class SignalingServer:
         self.logger.addHandler(self.consoleLogHandler)  # Logs to console
         self.logger.addHandler(self.generalLogHandler)    
         self.logger.addHandler(self.errorLogHandler)          
+    
+    def Shutdown(self):
+        shouldShutdown = input("Enter COMMENCE SHUTDOWN to shutdown server")
+        if(shouldShutdown.strip().upper() == "COMMENCE SHUTDOWN"):
+            self.shuttingDown = True
+            
+            self.logger.info("BEGINNING SHUTDOWN SEQUENCE")
+            self.logger.info("CLOSING ALL THREADS")
+            #Waiting for all threads to finish
+            for t in self.threads:
+                t.join()
         
+            #Telling all users to finish
+            self.logger.info("CLOSING ALL PEERS")
+            for peer in self.peers:
+                connectionSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                connectionSocket.connect((self.peers[peer]["ip"], self.peers[peer]["port"]))
+                shutdownMessage = {"type" : "serverShutdown"}
+                connectionSocket.send(json.dumps(shutdownMessage).encode())
+                connectionSocket.close()
+            
+            
+            #Closing server
+            self.logger.info("SHUTTING SERVER. GOODBYE")
+            self.serverSocket.close()
+            
+    
     def handle_peer(self, peer_socket):
         try:
             self.logger.debug("Waiting to receive peer info...")  # Debug message
@@ -90,8 +119,9 @@ class SignalingServer:
             databaseConnection = sqlite3.connect('PeersP2PStorage.db')
             cursor = databaseConnection.cursor()
             
-            threading.Thread(threading.Thread(target= self.RequestFilesFromUser, args = (), daemon=True).start())
-            
+            t = (threading.Thread(target= self.RequestFilesFromUser, args = (), daemon=True))
+            t.start()
+            self.threads.append(t)
             
             if("type" in peer_info):
                 if(peer_info["type"] == "uploadPing"):
@@ -145,7 +175,7 @@ class SignalingServer:
             
     def FileDeletor(self): #TODO
         try:
-            while True:
+            while True and not self.shuttingDown:
                 time.sleep(10)
                 self.logger.debug("TRYING TO DELETE FILES")
                 databaseConn = sqlite3.connect("PeersP2PStorage.db")
@@ -325,7 +355,7 @@ class SignalingServer:
 
     def FileReturner(self):
         try:
-            while True:
+            while True and not self.shuttingDown:
                 time.sleep(self.timeBetweenReturns)
                 #Ping each peer 
                 self.logger.debug(f"HEARBEATCHECKRUNNING : {self.runningHeartbeatCheck}")
@@ -483,7 +513,7 @@ class SignalingServer:
             conn.close()
 
     def PeerHeartbeater(self):
-        while True:
+        while True and not self.shuttingDown:
             time.sleep(self.timeBetweenHeartbeats)
             self.logger.info(f"PEERS {self.peers}")
             #Ping each peer 
@@ -565,9 +595,8 @@ class SignalingServer:
             return None
 
     def start(self):
-        server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        server_socket.bind((self.host, self.port))
-        server_socket.listen(5)
+        self.serverSocket.bind((self.host, self.port))
+        self.serverSocket.listen(5)
         self.logger.info(f"Signaling server running on {self.host}:{self.port}")
         
         #Setting up SQLite database to store files
@@ -628,32 +657,48 @@ class SignalingServer:
         
         databaseConnection.close()
         
+        threading.Thread(target=self.Shutdown).start()
+        
         #Starting File Distributor
         try:
-            threading.Thread(target= self.FileDistributor, args = (r"C:\Users\iniga\OneDrive\Programming\P2P Storage\Files To Send", ), daemon=True).start()
+            t = threading.Thread(target= self.FileDistributor, args = (r"C:\Users\iniga\OneDrive\Programming\P2P Storage\Files To Send", ), daemon=True)
+            t.start()
+            self.threads.append(t)
         except Exception as e:
             self.logger.error(f"Error {e} with file Distribution", exc_info=True)
         
+        #!LABEL
+        
         #Pinging each peer to check theyre connected - heartbeating
-        threading.Thread(target=self.PeerHeartbeater, args=()).start()
-        
+        t = threading.Thread(target=self.PeerHeartbeater, args=())
+        t.start()
+        self.threads.append(t)
         #Starting returner
-        threading.Thread(target = self.FileReturner, args = ()).start()
-        
-        threading.Thread(target = self.FileDeletor, args = ()).start()
-        
-        while True:
-            self.logger.info("Waiting for peer connections...")
-            peer_socket, addr = server_socket.accept()
-            self.logger.info(f"Message on {addr}")
-            if(not addr in self.connectedAddrs):
-                self.logger.info(f"New connection from {addr}")
-                self.connectedAddrs.append(addr)
+        t = threading.Thread(target = self.FileReturner, args = ())
+        t.start()
+        self.threads.append(t)
+        t = threading.Thread(target = self.FileDeletor, args = ())
+        t.start()
+        self.threads.append(t)
+        try:
+            while True and not self.shuttingDown:
+                self.logger.info("Waiting for peer connections...")
+                if not self.shuttingDown:
+                    peer_socket, addr = self.serverSocket.accept()
+                    self.logger.info(f"Message on {addr}")
+                    if(not addr in self.connectedAddrs):
+                        self.logger.info(f"New connection from {addr}")
+                        self.connectedAddrs.append(addr)
 
-                # Handle each peer in a separate thread
-                threading.Thread(target=self.handle_peer, args=(peer_socket,), daemon=True).start()
-                self.logger.warning("NEW THREAD CREATED")
-                #self.handle_peer(peer_socket)
+                        # Handle each peer in a separate thread
+                        t = threading.Thread(target=self.handle_peer, args=(peer_socket,), daemon=True)
+                        t.start()
+                        self.threads.append(t)
+                        self.logger.warning("NEW THREAD CREATED")
+        except Exception as e:
+            if(not isinstance(e, OSError) and getattr(e, "winerror", None) == 10038):
+                self.logger.error(f"Error {e} in start")
+                        
 
     def SendChunkToPeer(self, userCode, chunk,chunkIndex, chunkSize, fileID):
         #Choosing who to send to
@@ -728,7 +773,7 @@ class SignalingServer:
     
     def FileDistributor(self, folderFilePath):
         try:
-            while True: 
+            while True and not self.shuttingDown: 
                 
                 #Loop through all files
                 self.logger.debug("LOOPING THROUGH FILES TO DISTRIBUTE")

@@ -233,6 +233,10 @@ class Peer:
                     peerSocket.send(json.dumps(returnMessage).encode())
                     
                     self.ReceiveChunk(peerSocket)
+                elif (chunkSendRequestDecoded["type"] == "serverShutdown"):
+                    self.logger.warning("SERVER SHUTTING DOWN")
+                    return
+                    
                 elif(chunkSendRequestDecoded["type"] == "heartbeatPing"):
                     returnMessage = {"type" : "heartbeatPingConfirmation"}
                     peerSocket.send(json.dumps(returnMessage).encode())
