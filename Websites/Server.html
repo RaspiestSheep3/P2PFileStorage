@@ -20,7 +20,7 @@
         --accentColour: #e6a1cf;
         
         /*Log colours*/
-        --infoColour: #498f45;
+        --infoColour: #96dc92;
         --warningColour : #f6ec60;
         --errorColour : #cc1212;
     }
@@ -298,13 +298,13 @@
         height: 2px;
         background-color: currentColor;
         transform: scaleX(0);
-        transform-origin: left;
+        transform-origin: center;
         opacity: 0;
         transition: transform 0.3s ease, opacity 0.3s ease;
     }
       
     .underlineFade:hover::after {
-    transform: scaleX(1);
+    transform: scaleX(0.7);
     opacity: 1;
     }
 
