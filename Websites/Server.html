@@ -67,6 +67,7 @@
         flex-direction: column;
         overflow-y: auto;
         background-color: var(--backgroundColour); 
+        overflow-x: hidden; /* Prevent horizontal scroll */
     }
     
     .infoAndLogContainer {
@@ -150,6 +151,12 @@
         padding: 0;
         margin: 0;
         max-height: 410px;
+        scrollbar-width: none; /* Firefox */
+        -ms-overflow-style: none;  /* Internet Explorer 10+ */
+    }
+
+    .scrollable-list::-webkit-scrollbar {
+        display: none; /* Chrome, Safari, Opera */
     }
 
     .serverLog {
@@ -358,9 +365,9 @@
                 <h2 class="displayText dataGraphHeader">Peers Graph</h2>
                 <canvas id="dataChart" width="400" height="250"></canvas>
                 <div class="dataGraphButtons">
-                    <button id="24hButton" class="displayText dataGraphButton displayButton bold underlineFade">24 Hours</button>
-                    <button id="7dButton" class="displayText dataGraphButton displayButton bold underlineFade">7 Days</button>
-                    <button id="30dButton" class="displayText dataGraphButton displayButton bold underlineFade">30 Days</button>
+                    <button id="24hButton" class="displayText dataGraphButton displayButton bold underlineFade" data-length="24h">24 Hours</button>
+                    <button id="7dButton" class="displayText dataGraphButton displayButton bold underlineFade" data-length="7d">7 Days</button>
+                    <button id="30dButton" class="displayText dataGraphButton displayButton bold underlineFade" data-length="30d">30 Days</button>
                 </div>
             </div>
         </div>
@@ -384,9 +391,9 @@
                 <h2 class = "displayText error" id = "loggingLevelDisplay">Error</h2>
             </div>
             <div id="loggingLevelButtons">
-                <button id="loggingLevelButtonInfo" class="displayText displayButton loggingLevelButton bold info underlineFade">INFO</button>
-                <button id="loggingLevelButtonWarning" class="displayText displayButton loggingLevelButton bold warning underlineFade">WARNING</button>
-                <button id="loggingLevelButtonError" class="displayText displayButton loggingLevelButton bold error underlineFade">ERROR</button>
+                <button id="loggingLevelButtonInfo" class="displayText displayButton loggingLevelButton bold info underlineFade" data-level="Info">INFO</button>
+                <button id="loggingLevelButtonWarning" class="displayText displayButton loggingLevelButton bold warning underlineFade" data-level="Warning">WARNING</button>
+                <button id="loggingLevelButtonError" class="displayText displayButton loggingLevelButton bold error underlineFade" data-level="Error">ERROR</button>
             </div>
         </div>
         <div id="colourSchemeOptions">
@@ -420,6 +427,36 @@
         var log = null
         var serverData = null;
         var dataChart = null;
+        var chartData = null;
+
+        async function readCSV() {
+            try {
+                const response = await fetch("TestData.csv");
+                
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+        
+                let csvData = await response.text();
+                chartData = parseCSV(csvData); 
+                console.log(`CHARTDATA : ${chartData}`);
+        
+            } catch (error) {
+                console.error('There was a problem with the fetch operation:', error);
+            }
+        }
+
+        function parseCSV(csv) {
+            const rows = csv.split('\n');
+            const result = [];
+        
+            rows.forEach(row => {
+                const columns = row.split(',');
+                result.push(columns);
+            });
+        
+            return result;
+        }
 
         async function loadPreferences() {
             try {
@@ -482,7 +519,19 @@
             }
         }
 
-        function DrawGraph() {
+        function getChartValues(list, length) {
+            const B = [];
+            for (let i = list.length - 1; i >= 0 && B.length < length; i--) {
+                let dataChunk = list[i][0];
+                dataChunk = dataChunk.split("--");
+                if (dataChunk[0] == 0) {
+                    B.push(list[i]);
+                }
+            }
+            return B;
+        }
+
+        function DrawGraph(drawType) {
             const ctx = document.getElementById('dataChart').getContext('2d');
             
             // If a chart instance already exists, destroy it before creating a new one
@@ -490,18 +539,36 @@
                 dataChart.destroy();
             }
         
-            // Define your chart data and configuration
-            const customLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-            const lineColour = getComputedStyle(document.documentElement).getPropertyValue('--accentColour').trim();
-        
-            // Create new chart
+            let lineColour = getComputedStyle(document.documentElement).getPropertyValue('--accentColour').trim();
+            let customLabels = [];
+
+            let userData = [];
+
+            if(drawType == "24h"){    
+                userData = chartData.slice(-24);
+                console.log(`USERDATA ${userData}`);
+                customLabels = userData.map(subarray => subarray[0]);
+            }
+
+            else if(drawType == "7d"){
+                userData = getChartValues(chartData, 7).reverse();
+                console.log(`USERDATA ${userData}`);
+                customLabels = userData.map(subarray => subarray[0]);
+            }
+
+            else if(drawType == "30d"){
+                userData = getChartValues(chartData, 30).reverse();
+                console.log(`USERDATA ${userData}`);
+                customLabels = userData.map(subarray => subarray[0]);
+            }
+
             dataChart = new Chart(ctx, {
                 type: 'line',
                 data: {
                     labels: customLabels,
                     datasets: [{
                         label: 'Peers',
-                        data: Array.from({ length: 7 }, () => Math.floor(Math.random() * 201)),
+                        data: userData,
                         borderColor: lineColour,
                         tension: 0.1
                     }]
@@ -511,6 +578,7 @@
                     maintainAspectRatio: false
                 }
             });
+            
         }
 
         async function Init() {
@@ -519,6 +587,7 @@
             await loadThemes();
             await LoadLog();
             await loadServerData();
+            await readCSV();
 
             currentColours = themeData[preferencesData.Theme];
             logLevel = preferencesData.LogLevel;
@@ -553,14 +622,14 @@
             document.getElementById("FilesToDelete").textContent = serverData["Files To Delete"];
             document.getElementById("FilesToReturn").textContent = serverData["Files To Return"];
             
-            DrawGraph();
+            DrawGraph("24h");
         }
 
         Init();
 
         //Setting up colour buttons
-        const buttons = document.querySelectorAll('.colourButton');
-        buttons.forEach(button => {
+        const colourButtons = document.querySelectorAll('.colourButton');
+        colourButtons.forEach(button => {
             button.addEventListener('click', () => {
                 let colour = button.getAttribute('data-color');
                 
@@ -572,7 +641,28 @@
                 document.documentElement.style.setProperty('--mainColour', theme.main);
                 document.documentElement.style.setProperty('--accentColour', theme.accent);
             
-                DrawGraph();
+                DrawGraph("24h");
+            });
+        });
+
+        //Setting up graph buttons
+        const graphButtons = document.querySelectorAll('.dataGraphButton');
+        graphButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                let duration = button.getAttribute('data-length');
+                
+                DrawGraph(duration);
+            });
+        });
+
+        //Setting up log level buttons
+        const logLevelButtons = document.querySelectorAll('.loggingLevelButton');
+        logLevelButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                logLevel = button.getAttribute('data-level');
+                
+                document.getElementById("loggingLevelDisplay").className = `displayText ${logLevel.charAt(0).toLowerCase() + logLevel.slice(1)}`;
+                document.getElementById("loggingLevelDisplay").textContent = logLevel;
             });
         });
 
