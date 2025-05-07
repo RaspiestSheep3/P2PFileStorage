@@ -40,6 +40,7 @@ class SignalingServer:
         self.shuttingDown = False
         self.threads = []
         self.serverSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.lastUsedFileID = None
         
         #*LOGGING
         # Create a colored formatter for console output
@@ -175,7 +176,7 @@ class SignalingServer:
             
     def FileDeletor(self): #TODO
         try:
-            while True and not self.shuttingDown:
+            while not self.shuttingDown:
                 time.sleep(10)
                 self.logger.debug("TRYING TO DELETE FILES")
                 databaseConn = sqlite3.connect("PeersP2PStorage.db")
@@ -355,7 +356,7 @@ class SignalingServer:
 
     def FileReturner(self):
         try:
-            while True and not self.shuttingDown:
+            while not self.shuttingDown:
                 time.sleep(self.timeBetweenReturns)
                 #Ping each peer 
                 self.logger.debug(f"HEARBEATCHECKRUNNING : {self.runningHeartbeatCheck}")
@@ -374,6 +375,8 @@ class SignalingServer:
                         continue
                     
                     try:
+                        self.CheckPeersConnected()
+                        
                         self.logger.debug(f"IP {peerIP} PORT {peerPort}")
                         connectionSocket.connect((peerIP,peerPort)) 
                         self.logger.debug("CONNECTION SUCCEEDED")
@@ -415,7 +418,7 @@ class SignalingServer:
                 userPort = row[1]
                 
                 self.logger.debug(f"IP {userIP}, PORT : {userPort}")
-                requestMessage = {"type" : "fileReturnRequest", "fileID" : "AAAA AAAA"}
+                requestMessage = {"type" : "fileReturnRequest", "fileID" : fileID}
                 
                 requestMessage = json.dumps(requestMessage).encode()
                 self.logger.debug("SENDING REQUEST IN ReturnFile")
@@ -513,7 +516,7 @@ class SignalingServer:
             conn.close()
 
     def PeerHeartbeater(self):
-        while True and not self.shuttingDown:
+        while not self.shuttingDown:
             time.sleep(self.timeBetweenHeartbeats)
             self.logger.info(f"PEERS {self.peers}")
             #Ping each peer 
@@ -569,8 +572,10 @@ class SignalingServer:
         self.runningHeartbeatCheck = False
     def IncreaseCode(self,code):
         try:
+            self.logger.debug(f"INCREASE CODE : {code}")
             code = [*code]
-            code.pop(code.index(" "))
+            if(" " in code):
+                code.pop(code.index(" "))
             for i in range(len(code)):
                 code[i] = ord(code[i])
 
@@ -584,12 +589,14 @@ class SignalingServer:
                         self.logger.critical("WE ARE OUT OF FILE CODES TO USE")
                         raise IndexError("Ran out of file codes to use")
 
-
+            code.insert(4, 32)
             codeOutput = ""
             for i in range(len(code)):
                 codeOutput += chr(code[i])
 
+            self.logger.debug(f"INCREASE CODE OUTPUT : {code}")
             return codeOutput
+        
         except Exception as e:
             self.logger.error(f"Error in FileID increase : {e}", exc_info=True)
             return None
@@ -667,8 +674,6 @@ class SignalingServer:
         except Exception as e:
             self.logger.error(f"Error {e} with file Distribution", exc_info=True)
         
-        #!LABEL
-        
         #Pinging each peer to check theyre connected - heartbeating
         t = threading.Thread(target=self.PeerHeartbeater, args=())
         t.start()
@@ -681,7 +686,7 @@ class SignalingServer:
         t.start()
         self.threads.append(t)
         try:
-            while True and not self.shuttingDown:
+            while not self.shuttingDown:
                 self.logger.info("Waiting for peer connections...")
                 if not self.shuttingDown:
                     peer_socket, addr = self.serverSocket.accept()
@@ -713,6 +718,10 @@ class SignalingServer:
         self.logger.debug(f"ROWS {rows}")
         
         targetUsers = []
+        
+        #!LABEL
+        #Make sure we dont attempt to send to someone whos not on
+        self.CheckPeersConnected()
         
         for i in range(1 + self.redundancyValue):
             self.logger.debug("TESTING 2")
@@ -773,7 +782,7 @@ class SignalingServer:
     
     def FileDistributor(self, folderFilePath):
         try:
-            while True and not self.shuttingDown: 
+            while not self.shuttingDown: 
                 
                 #Loop through all files
                 self.logger.debug("LOOPING THROUGH FILES TO DISTRIBUTE")
@@ -816,15 +825,13 @@ class SignalingServer:
             conn = sqlite3.connect("PeersP2PStorage.db")
             cursor = conn.cursor()
             cursor.execute("SELECT * FROM lastUsedFileID")
-            lastUsedID = cursor.fetchall()
             
-            self.logger.debug(f"TEST 1.1   |{lastUsedID}")
+            self.logger.debug(f"TEST 1.1   |{self.lastUsedFileID}")
+
+            if(self.lastUsedFileID == None):
+                self.lastUsedFileID ="AAAA AAAA"
             
-            if(lastUsedID != None) and (lastUsedID != []):
-                lastUsedID = lastUsedID[0][0]
-                fileID = self.IncreaseCode(lastUsedID)
-            else:
-                fileID = "AAAA AAAA"
+            fileID = (self.lastUsedFileID)
             
             self.logger.debug(f"FILEID : {fileID}")
             self.logger.debug("TEST 2")
@@ -918,21 +925,12 @@ class SignalingServer:
             self.logger.info(f"BROKEN {brokenChunkIndexes}")
             
             #Finding file code
-            conn = sqlite3.connect("PeersP2PStorage.db")
-            cursor = conn.cursor()
-            cursor.execute("SELECT * FROM lastUsedFileID")
-            lastUsedID = cursor.fetchall()
+            self.logger.debug(f"TEST 1.2   |{self.lastUsedFileID}")
             
-            self.logger.debug(f"TEST 1.1   |{lastUsedID}")
-            
-            if(lastUsedID != None) and (lastUsedID != []):
-                lastUsedID = lastUsedID[0][0]
-                fileID = self.IncreaseCode(lastUsedID)
-            else:
-                fileID = "AAAA AAAA"
-            
-            conn.close()
-            
+            if(self.lastUsedFileID == None):
+                self.lastUsedFileID = "AAAA AAAA"
+            fileID = self.IncreaseCode(self.lastUsedFileID)
+            self.lastUsedFileID = fileID
             fileName = f"userCode{userCode}--{datetime.now().strftime('%d_%m_%Y-%H_%M_%S')}--fileID{fileID}.bin"
             
             
