@@ -1,4 +1,4 @@
 {
-    "Theme" : "Silver",
-    "LogLevel" : "Error"
+    "Theme": "Red",
+    "LogLevel": "Warning"
 }

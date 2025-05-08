@@ -10,6 +10,9 @@ import math
 import logging
 import colorlog
 from Debug import ResetSystem
+from flask import Flask, jsonify, Response, request
+from flask_cors import CORS
+import csv
 
 #!TEMP
 if(input("SHOULD RESET FOLDERS (Y/N): ").strip().upper() == "Y"):
@@ -21,6 +24,8 @@ if(os.path.exists(f"ServerGeneral.log")):
     os.remove(f"ServerGeneral.log")
     os.remove(f"ServerErrors.log")
     
+#Logging
+
 # Signaling server class
 class SignalingServer:
     def __init__(self, host='0.0.0.0', port=12345):
@@ -41,6 +46,7 @@ class SignalingServer:
         self.threads = []
         self.serverSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.lastUsedFileID = None
+        self.mainLoggingLevel = logging.INFO
         
         #*LOGGING
         # Create a colored formatter for console output
@@ -59,10 +65,15 @@ class SignalingServer:
         self.consoleLogHandler = logging.StreamHandler()
         self.consoleLogHandler.setFormatter(self.logFormatter)
 
-        # Create a file handler for "app.log"
+        # Frontend handler
+        self.frontendLogHandler = logging.FileHandler(r"C:\Users\iniga\OneDrive\Programming\P2P Storage\Websites\ServerLog.log")
+        self.frontendLogHandler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
+        self.frontendLogHandler.setLevel(self.mainLoggingLevel)  
+        
+        # General handler
         self.generalLogHandler = logging.FileHandler("ServerGeneral.log")
         self.generalLogHandler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
-        self.generalLogHandler.setLevel(logging.DEBUG)  
+        self.generalLogHandler.setLevel(logging.DEBUG) 
 
         # Create a file handler for "shared.log"
         self.errorLogHandler = logging.FileHandler("ServerErrors.log")
@@ -76,7 +87,8 @@ class SignalingServer:
         # Add handlers to the logger
         self.logger.addHandler(self.consoleLogHandler)  # Logs to console
         self.logger.addHandler(self.generalLogHandler)    
-        self.logger.addHandler(self.errorLogHandler)          
+        self.logger.addHandler(self.errorLogHandler)     
+        self.logger.addHandler(self.frontendLogHandler)       
     
     def Shutdown(self):
         shouldShutdown = input("Enter COMMENCE SHUTDOWN to shutdown server")
@@ -945,8 +957,127 @@ class SignalingServer:
         
         except Exception as e:
             self.logger.error(f"Error {e} in AcceptFileFromPeer", exc_info=True)
+
+#*Flask shenanigans
+app = Flask(__name__)
+CORS(app)  # Allows cross-origin requests
+
+@app.route('/api/Themes', methods=['GET'])
+def ReturnThemeJSON():
+    try:
+        with open(r'C:\Users\iniga\OneDrive\Programming\P2P Storage\Websites\Themes.json', 'r') as file:
+            data = json.load(file)
+        return jsonify(data) 
     
+    except FileNotFoundError:
+        return jsonify({"error": "Themes.json not found"}), 404
     
+    except json.JSONDecodeError:
+        return jsonify({"error": "Themes.json is not valid JSON"}), 500
+    
+@app.route('/api/Log', methods=['GET'])
+def ReturnLog():
+    try:
+        with open(r'C:\Users\iniga\OneDrive\Programming\P2P Storage\Websites\ServerLog.log', 'r') as file:
+            data = file.read()  # Read the content of the log file as text
+        return Response(data, mimetype='text/plain')  # Return plain text response
+    
+    except FileNotFoundError:
+        return jsonify({"error": "Test.log not found"}), 404
+    
+    except Exception as e:
+        return jsonify({"error": f"An error occurred: {str(e)}"}), 500
+
+@app.route('/api/data', methods=['GET'])
+def get_data():
+    # Sample data
+    data = {"message": "Hello from Flask!", "status": "success"}
+    return jsonify(data)
+
+@app.route('/api/Preferences', methods=['GET'])
+def ReturnPreferences():
+    try:
+        print("!234")
+        with open(r'C:\Users\iniga\OneDrive\Programming\P2P Storage\Websites\Preferences.json', 'r') as file:
+            data = json.load(file)
+        return jsonify(data) 
+    
+    except FileNotFoundError:
+        return jsonify({"error": "Preferences.json not found"}), 404
+    
+    except json.JSONDecodeError:
+        return jsonify({"error": "Preferences.json is not valid JSON"}), 500
+
+@app.route('/api/ServerData', methods=['GET'])
+def ReturnServerData():
+    try:
+        with open(r'C:\Users\iniga\OneDrive\Programming\P2P Storage\Websites\ServerData.json', 'r') as file:
+            data = json.load(file)
+        return jsonify(data) 
+    
+    except FileNotFoundError:
+        return jsonify({"error": "ServerData.json not found"}), 404
+    
+    except json.JSONDecodeError:
+        return jsonify({"error": "ServerData.json is not valid JSON"}), 500
+
+@app.route('/api/ServerCSV', methods=['GET'])
+def ReturnServerCSV():
+    try:
+        with open(r'C:\Users\iniga\OneDrive\Programming\P2P Storage\Websites\TestData.csv', 'r') as file:
+            csv_reader = csv.reader(file)
+            data = [row for row in csv_reader]
+        return jsonify(data) 
+    
+    except FileNotFoundError:
+        return jsonify({"error": "TestData.csv not found"}), 404
+    
+    except json.JSONDecodeError:
+        return jsonify({"error": "TestData.csv   is not valid JSON"}), 500
+
+def UpdateJSON(key, value, path):
+    with open(path, "r") as fileHandle:
+        data = json.load(fileHandle)
+        data[key] = value
+    with open(path, "w") as fileHandle:
+        json.dump(data, fileHandle, indent=4)
+
+@app.route('/api/Post/LogLevel', methods=['POST'])
+def UpdateLogLevel():
+    content = request.json  # Get JSON from the request body
+    print("Received:", content)
+    #update logging software
+    newLogLevel = content["logLevel"]
+    
+    logLevelDict = {
+        "Info" : logging.INFO,
+        "Warning" : logging.WARNING,
+        "Error" : logging.ERROR
+    }
+    
+    server.mainLoggingLevel = logLevelDict[newLogLevel]
+    server.frontendLogHandler.setLevel(server.mainLoggingLevel)
+    
+    #Updating jsons
+    UpdateJSON("LogLevel", newLogLevel, r"C:\Users\iniga\OneDrive\Programming\P2P Storage\Websites\Preferences.json")
+    return jsonify({"message": "Data received!", "received": content})
+
+@app.route('/api/Post/ChangeThemePreference', methods=['POST'])
+def ChangeThemePreferences():
+    content = request.json  # Get JSON from the request body
+    print("Received:", content)
+    #update logging software
+    newColour = content["colour"]
+    
+    #Updating jsons
+    UpdateJSON("Theme", newColour, r"C:\Users\iniga\OneDrive\Programming\P2P Storage\Websites\Preferences.json")
+    return jsonify({"message": "Data received!", "received": content})
+    
+
 if __name__ == '__main__':
     server = SignalingServer()
-    server.start()
+    #Starting up server
+    threading.Thread(target=server.start).start()
+    
+    #Starting website
+    app.run(port=5000, debug=False)

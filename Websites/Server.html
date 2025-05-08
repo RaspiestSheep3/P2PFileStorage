@@ -164,6 +164,7 @@
         flex-direction: column;
         flex: 1; /* optional: makes it grow if needed */
         min-height: 100%; /* ensure it stretches */
+        width : 600px;
     }
 
     .serverLogEntry {
@@ -205,7 +206,7 @@
         padding: 5px 5px;
     }
 
-    .serverEntryOutlineType {
+    #serverEntryOutlineType {
         text-decoration: underline;
     }
 
@@ -338,7 +339,8 @@
             <ul id="serverLogUL">
             </ul>
             <div class="serverEntryOutline">
-                <h2 class="displayText error serverEntryOutlineType">Error - 21:40:13-03:05:2025</h2><p class="displayText error">Not enough codes available</p>
+                <h2 id="serverEntryOutlineType" class="displayText error">Error - 21:40:13-03:05:2025</h2>
+                <p  id="serverEntryOutline" class="displayText error">Not enough codes available</p>
             </div>
         </div>
 
@@ -428,39 +430,30 @@
         var serverData = null;
         var dataChart = null;
         var chartData = null;
+        var logSplit = [];
 
         async function readCSV() {
             try {
-                const response = await fetch("TestData.csv");
+                const response = await fetch('http://127.0.0.1:5000/api/ServerCSV');
                 
                 if (!response.ok) {
                     throw new Error('Network response was not ok');
                 }
         
-                let csvData = await response.text();
-                chartData = parseCSV(csvData); 
-                console.log(`CHARTDATA : ${chartData}`);
+                // Fetch JSON directly
+                chartData = await response.json();
+                console.log("CHARTDATA:", chartData);
         
             } catch (error) {
                 console.error('There was a problem with the fetch operation:', error);
             }
         }
 
-        function parseCSV(csv) {
-            const rows = csv.split('\n');
-            const result = [];
-        
-            rows.forEach(row => {
-                const columns = row.split(',');
-                result.push(columns);
-            });
-        
-            return result;
-        }
-
         async function loadPreferences() {
             try {
-                const response = await fetch('Preferences.json');
+                console.log("1");
+                const response = await fetch('http://127.0.0.1:5000/api/Preferences');
+                console.log("2")
                 if (!response.ok) throw new Error("Network response was not OK");
                 const data = await response.json();
                 console.log("1. Data loaded:", data);
@@ -473,9 +466,10 @@
             }
         }
 
+
         async function loadThemes() {
             try {
-                const response = await fetch('Themes.json');
+                const response = await fetch('http://127.0.0.1:5000/api/Themes');
                 if (!response.ok) throw new Error("Network response was not OK");
                 const data = await response.json();
                 console.log("2. Data loaded:", data);
@@ -491,7 +485,7 @@
 
         async function LoadLog() {
             try {
-                const response = await fetch('Test.log');
+                const response = await fetch('http://127.0.0.1:5000/api/Log');
                 if (!response.ok) throw new Error("Network response was not OK");
                 const data = await response.text();
                 // Code here waits for fetch to finish
@@ -505,7 +499,7 @@
 
         async function loadServerData() {
             try {
-                const response = await fetch('ServerData.json');
+                const response = await fetch('http://127.0.0.1:5000/api/ServerData');
                 if (!response.ok) throw new Error("Network response was not OK");
                 const data = await response.json();
                 console.log("3. Data loaded:", data);
@@ -581,13 +575,38 @@
             
         }
 
+        async function UpdateThemePreference(newTheme){
+            try {
+                const response = await fetch('http://127.0.0.1:5000/api/Post/ChangeThemePreference', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({colour : newTheme})
+                });
+    
+                const data = await response.json();
+                console.log("POST Response:", data);
+            } catch (error) {
+                console.error("Error posting data:", error);
+            }
+        }
+
         async function Init() {
             //Setting colours
+            console.log("INIT");
             await loadPreferences();
+            console.log("PREFERENCES");
             await loadThemes();
+            console.log("THEMES");
             await LoadLog();
+            console.log("LOG");
             await loadServerData();
+            console.log("DATA");
             await readCSV();
+            console.log("CSV");
+
+            console.log("THEME DATA", themeData);
 
             currentColours = themeData[preferencesData.Theme];
             logLevel = preferencesData.LogLevel;
@@ -604,18 +623,30 @@
 
             //Setting logs
             console.log(typeof(log));
-            console.log(log);
-            log = log.split("\n");
-            let ulElement = document.getElementById('serverLogUL');
-            for(let logEntry of log){
-                logEntry = logEntry.split(" - ");
-                //Writing to the display
-                let newLi = document.createElement('li');
-                newLi.textContent = `${logEntry[0]} - ${logEntry[1]}`;  // Set the text of the new list item 
-                newLi.className = `${logEntry[1].toLowerCase()} bold displayText serverLogEntry underlineFade`;
-                ulElement.appendChild(newLi);
-            } 
+            console.log(`¬${log}¬`);
+            logSplit = log.split("\n");
+            console.log(`LOGSPLIT ${logSplit}, ${typeof(logSplit)}`);
+            if(log.trim() !== ""){
+                let ulElement = document.getElementById('serverLogUL');
+                ulElement.innerHTML = "";
 
+                for(let logEntry of logSplit){
+                    console.log(`LOGENTRY ${logEntry}`);
+                    if(logEntry.trim() !== ""){
+                        logEntry = logEntry.split(" - ");
+                        //Writing to the display
+                        let newLi = document.createElement('li');
+                        newLi.textContent = `${logEntry[0]} - ${logEntry[1]}`;  // Set the text of the new list item 
+                        newLi.className = `${logEntry[1].toLowerCase()} bold displayText serverLogEntry underlineFade`;
+                        
+                        newLi.setAttribute("data-LogTimestamp", logEntry[0]);
+                        newLi.setAttribute("data-LogType", logEntry[1]);
+                        newLi.setAttribute("data-LogInfo", logEntry[2]);
+                        
+                        ulElement.appendChild(newLi);
+                    }
+                } 
+            }
             //Setting Server Data
             document.getElementById("PeersConnected").textContent = serverData["Peers Connected"];
             document.getElementById("FilesInStorage").textContent = serverData["Files In Storage"];
@@ -623,27 +654,55 @@
             document.getElementById("FilesToReturn").textContent = serverData["Files To Return"];
             
             DrawGraph("24h");
+
+            //Setting up log bits
+            const logEntries = document.querySelectorAll(".serverLogEntry");
+            logEntries.forEach(logEntry => {
+                logEntry.addEventListener('click', () => {
+                    console.log("TEST 12346");
+                    let logTimestamp = logEntry.getAttribute('data-LogTimestamp');
+                    let logType = logEntry.getAttribute('data-LogType');
+                    let logInfo = logEntry.getAttribute('data-LogInfo');
+                    
+                    console.log(`${logTimestamp}|${logType}|${logInfo}`);
+                    
+                    //Setting output
+                    let logOutlineType = document.getElementById("serverEntryOutlineType");
+                    let logOutline = document.getElementById("serverEntryOutline");
+
+                    logOutlineType.textContent = `${logType} - ${logTimestamp}`
+                    logOutline.textContent = `${logInfo}`
+
+                    console.log(`LOGCOLOUR ${logType}`);    
+
+                    logOutlineType.className = `displayText ${logType.toLowerCase()}`;
+                    logOutline.className = `displayText ${logType.toLowerCase()}`;
+                });
+            });
+            
+            //Setting up colour buttons
+            const colourButtons = document.querySelectorAll('.colourButton');
+            colourButtons.forEach(button => {
+                button.addEventListener('click', () => {
+                    let colour = button.getAttribute('data-color');
+                    
+                    console.log(`Selected colour: ${colour}`);
+                    
+                    let theme = themeData[colour];
+
+                    document.documentElement.style.setProperty('--backgroundColour', theme.background);
+                    document.documentElement.style.setProperty('--mainColour', theme.main);
+                    document.documentElement.style.setProperty('--accentColour', theme.accent);
+                    DrawGraph("24h");
+
+                    UpdateThemePreference(colour);
+                });
+            });
+        
+            setTimeout(Init, 10000);
         }
 
         Init();
-
-        //Setting up colour buttons
-        const colourButtons = document.querySelectorAll('.colourButton');
-        colourButtons.forEach(button => {
-            button.addEventListener('click', () => {
-                let colour = button.getAttribute('data-color');
-                
-                console.log(`Selected colour: ${colour}`);
-                
-                let theme = themeData[colour];
-
-                document.documentElement.style.setProperty('--backgroundColour', theme.background);
-                document.documentElement.style.setProperty('--mainColour', theme.main);
-                document.documentElement.style.setProperty('--accentColour', theme.accent);
-            
-                DrawGraph("24h");
-            });
-        });
 
         //Setting up graph buttons
         const graphButtons = document.querySelectorAll('.dataGraphButton');
@@ -655,6 +714,23 @@
             });
         });
 
+        async function SetLogLevel(logLevel) {
+            try {
+                const response = await fetch('http://127.0.0.1:5000/api/Post/LogLevel', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({logLevel : logLevel})
+                });
+
+                const data = await response.json();
+                console.log("POST Response:", data);
+            } catch (error) {
+                console.error("Error posting data:", error);
+            }
+        }
+
         //Setting up log level buttons
         const logLevelButtons = document.querySelectorAll('.loggingLevelButton');
         logLevelButtons.forEach(button => {
@@ -663,8 +739,11 @@
                 
                 document.getElementById("loggingLevelDisplay").className = `displayText ${logLevel.charAt(0).toLowerCase() + logLevel.slice(1)}`;
                 document.getElementById("loggingLevelDisplay").textContent = logLevel;
+                
+                //Setting warning level
+                SetLogLevel(logLevel);
             });
-        });
+        });        
 
     </script>
 
