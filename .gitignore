@@ -5,3 +5,6 @@ Files To Return/
 *.log
 *.db
 File Output/
+PeerData.csv
+.env
+TestDataWriter.py

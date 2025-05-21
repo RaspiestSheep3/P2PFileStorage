@@ -1,4 +1,5 @@
 {
     "Theme": "Red",
-    "LogLevel": "Warning"
+    "LogLevel": "Info",
+    "ChartType": "24h"
 }

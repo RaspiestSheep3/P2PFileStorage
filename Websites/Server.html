@@ -280,13 +280,16 @@
         padding: 5px;
         margin-bottom: 10px;
         text-align: center;
+        align-items: center; /* vertically center */
+        justify-content: center;
     }
 
     #loggingLevelDisplayContainer {
         display: flex;
         text-align: center;
-        align-items: center; /* vertically center */
         gap : 20px;
+        align-items: center; /* vertically center */
+        justify-content: center;
     }
 
     .loggingLevelButton {
@@ -326,6 +329,53 @@
         text-align: center;
     }
 
+    #refreshRate {
+        margin-top: 10px;
+        border : 3px solid var(--mainColour);
+        border-radius: 20px;
+        padding: 5px;
+        text-align: center;
+    }
+
+    #refreshRateValue {
+        width: 150px;
+        text-align: center;
+    }
+
+    #refreshRateSet {
+        border : 3px solid var(--accentColour);
+        color: var(--accentColour);
+        border-radius: 20px;
+        width : 150px;
+    }
+
+    #refreshRateInput {
+        border : 3px solid var(--accentColour);
+        color: var(--accentColour);
+        padding: 2px;
+        background-color: var(--backgroundColour);
+        width: 150px;
+    }
+
+    #refreshRateSettings {
+        display: flex;
+        gap: 10px; 
+        align-items: center; 
+        justify-content: center; 
+    }
+
+    #clearLogButton {
+        width: 350px; 
+        margin-top: 10px; /* Optional spacing */
+        border : 3px solid var(--mainColour);
+        color: var(--mainColour);
+    }
+
+    #clearLogButton:hover {
+        border : 3px solid var(--accentColour);
+        color: var(--accentColour);
+        font-size: 20px;
+    }
 </style>
 
 <body>
@@ -339,8 +389,8 @@
             <ul id="serverLogUL">
             </ul>
             <div class="serverEntryOutline">
-                <h2 id="serverEntryOutlineType" class="displayText error">Error - 21:40:13-03:05:2025</h2>
-                <p  id="serverEntryOutline" class="displayText error">Not enough codes available</p>
+                <h2 id="serverEntryOutlineType" class="displayText error"></h2>
+                <p  id="serverEntryOutline" class="displayText error"></p>
             </div>
         </div>
 
@@ -397,6 +447,7 @@
                 <button id="loggingLevelButtonWarning" class="displayText displayButton loggingLevelButton bold warning underlineFade" data-level="Warning">WARNING</button>
                 <button id="loggingLevelButtonError" class="displayText displayButton loggingLevelButton bold error underlineFade" data-level="Error">ERROR</button>
             </div>
+            <button id="clearLogButton" class="displayText displayButton bold underlineFade">CLEAR LOG</button>
         </div>
         <div id="colourSchemeOptions">
             <h2 class="displayText ">Colour Palette Options</h2>
@@ -415,6 +466,14 @@
                 </div>
             </div>
         </div>
+        <div id="refreshRate">
+            <h2 class="displayText">Website Refresh Rate</h2>
+            <div id="refreshRateSettings">
+                <h2 class="number displayText" id="refreshRateValue">10s</h2>
+                <input type="number" class="bold" id="refreshRateInput" min="1" step="1">
+                <button id="refreshRateSet" class="displayText displayButton bold underlineFade">Set New Rate</button>
+            </div>
+        </div>
     </section>
 
     <div class="shutdownButton">
@@ -431,6 +490,9 @@
         var dataChart = null;
         var chartData = null;
         var logSplit = [];
+        var refreshRate = 10 * 1000;
+        var serverActive = false;
+        var graphDrawType = "24h";
 
         async function readCSV() {
             try {
@@ -512,6 +574,7 @@
                 console.error("Fetch error:", error);
             }
         }
+        
 
         function getChartValues(list, length) {
             const B = [];
@@ -592,7 +655,95 @@
             }
         }
 
-        async function Init() {
+        async function ShutdownServer(){
+            try {
+                const response = await fetch('http://127.0.0.1:5000/api/Post/ShutdownServer', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({})
+                });
+    
+                const data = await response.json();
+                console.log("POST Response:", data);
+                Init();
+            } catch (error) {
+                console.error("Error posting data:", error);
+            }
+        }
+
+        async function UpdateChartType(newChartType) {
+            try {
+                const response = await fetch('http://127.0.0.1:5000/api/Post/UpdateChartType', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ChartType : newChartType})
+                });
+    
+                const data = await response.json();
+                console.log("POST Response:", data);
+            } catch (error) {
+                console.error("Error posting data:", error);
+            }
+        }
+
+        async function StartupServer(){
+            try {
+                const response = await fetch('http://127.0.0.1:5000/api/Post/StartServer', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({})
+                });
+    
+                const data = await response.json();
+                console.log("POST Response:", data);
+                Init();
+            } catch (error) {
+                console.error("Error posting data:", error);
+            }
+        }
+
+        async function ServerStatus() {
+            try {
+                const response = await fetch('http://127.0.0.1:5000/api/ServerStatus');
+                if (!response.ok) throw new Error("Network response was not OK");
+                const data = await response.json();
+                console.log("2. Data loaded:", data);
+        
+                // Code here waits for fetch to finish
+                serverActive = data["serverStatus"];
+                
+                // Any code here will run after fetch is done
+            } catch (error) {
+                console.error("Fetch error:", error);
+            }
+        }
+
+        async function ClearLog(){
+            try {
+                const response = await fetch('http://127.0.0.1:5000/api/Post/ClearLog', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({})
+                });
+    
+                const data = await response.json();
+                console.log("POST Response:", data);
+                Init();
+            } catch (error) {
+                console.error("Error posting data:", error);
+            }
+
+        }
+
+        async function Init(shouldRepeat=false) {
             //Setting colours
             console.log("INIT");
             await loadPreferences();
@@ -605,11 +756,14 @@
             console.log("DATA");
             await readCSV();
             console.log("CSV");
+            await ServerStatus();
+            console.log("Server Status");
 
             console.log("THEME DATA", themeData);
 
             currentColours = themeData[preferencesData.Theme];
             logLevel = preferencesData.LogLevel;
+            graphDrawType = preferencesData.ChartType;
 
             console.log(`${currentColours.background} ${currentColours.main} ${currentColours.accent}`);
 
@@ -626,7 +780,7 @@
             console.log(`¬${log}¬`);
             logSplit = log.split("\n");
             console.log(`LOGSPLIT ${logSplit}, ${typeof(logSplit)}`);
-            if(log.trim() !== ""){
+            
                 let ulElement = document.getElementById('serverLogUL');
                 ulElement.innerHTML = "";
 
@@ -646,14 +800,14 @@
                         ulElement.appendChild(newLi);
                     }
                 } 
-            }
+            
             //Setting Server Data
             document.getElementById("PeersConnected").textContent = serverData["Peers Connected"];
             document.getElementById("FilesInStorage").textContent = serverData["Files In Storage"];
             document.getElementById("FilesToDelete").textContent = serverData["Files To Delete"];
             document.getElementById("FilesToReturn").textContent = serverData["Files To Return"];
             
-            DrawGraph("24h");
+            DrawGraph(graphDrawType);
 
             //Setting up log bits
             const logEntries = document.querySelectorAll(".serverLogEntry");
@@ -680,6 +834,11 @@
                 });
             });
             
+            //Setting shutdown button text
+            const shutdownBtn = document.querySelector("#shutdownBtn");
+            if(serverActive) shutdownBtn.textContent = "Shutdown Server";
+            else shutdownBtn.textContent = "Start Up Server";
+
             //Setting up colour buttons
             const colourButtons = document.querySelectorAll('.colourButton');
             colourButtons.forEach(button => {
@@ -698,19 +857,33 @@
                     UpdateThemePreference(colour);
                 });
             });
-        
-            setTimeout(Init, 10000);
+
+            //Setting shutdown button
+            shutdownBtn.addEventListener('click', () => {
+                if(serverActive){
+                    console.log("SHUTDOWN");
+                    
+                    ShutdownServer();
+                }
+                else{
+                    console.log("Startup");
+                    StartupServer();
+                }
+            });
+
+            if(shouldRepeat) setTimeout(Init, refreshRate, true);
         }
 
-        Init();
+        Init(true);
 
         //Setting up graph buttons
         const graphButtons = document.querySelectorAll('.dataGraphButton');
         graphButtons.forEach(button => {
             button.addEventListener('click', () => {
                 let duration = button.getAttribute('data-length');
-                
-                DrawGraph(duration);
+                drawGraphType = duration;
+                UpdateChartType(drawGraphType);
+                DrawGraph(drawGraphType);
             });
         });
 
@@ -743,7 +916,24 @@
                 //Setting warning level
                 SetLogLevel(logLevel);
             });
-        });        
+        });  
+        
+        //Setting up refresh rate
+        const refreshRateButton= document.querySelector('#refreshRateSet');
+        refreshRateButton.addEventListener('click', () => {
+            let newRefreshRateValue = Number(document.getElementById("refreshRateInput").value) * 1000;
+            refreshRate = newRefreshRateValue;
+
+            document.getElementById("refreshRateValue").textContent = (refreshRate/1000).toString() + "s";
+
+        });
+
+        //Setting up log clear button
+        const logClearButton = document.querySelector("#clearLogButton"); //TODO   
+        logClearButton.addEventListener('click', () => {
+            //Clearing the log
+            ClearLog();
+        });
 
     </script>
 

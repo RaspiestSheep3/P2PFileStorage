@@ -3,7 +3,7 @@ import json
 import threading
 import time
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta, date
 from cryptography.hazmat.primitives import padding
 import os
 import math
@@ -13,6 +13,7 @@ from Debug import ResetSystem
 from flask import Flask, jsonify, Response, request
 from flask_cors import CORS
 import csv
+from dotenv import load_dotenv, dotenv_values
 
 #!TEMP
 if(input("SHOULD RESET FOLDERS (Y/N): ").strip().upper() == "Y"):
@@ -24,7 +25,8 @@ if(os.path.exists(f"ServerGeneral.log")):
     os.remove(f"ServerGeneral.log")
     os.remove(f"ServerErrors.log")
     
-#Logging
+#Setting up .env
+load_dotenv()
 
 # Signaling server class
 class SignalingServer:
@@ -33,6 +35,7 @@ class SignalingServer:
         self.port = port
         self.peers = {}
         self.lock = threading.Lock()  # Lock to ensure thread safety for shared data
+        self.chartDataLock = threading.Lock()
         self.timeBetweenHeartbeats = 10
         self.spacePerPeerMB = 1024
         self.redundancyValue = 0
@@ -47,6 +50,15 @@ class SignalingServer:
         self.serverSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.lastUsedFileID = None
         self.mainLoggingLevel = logging.INFO
+        self.serverActive = False
+        self.lastHourReading = None
+        
+        #.env
+        self.filesToReturnLocation = os.getenv("SERVER_FILES_TO_RETURN_FOLDER_LOCATION")
+        self.filesToSendLocation = os.getenv("SERVER_FILES_TO_SEND_FOLDER_LOCATION")
+        self.frontendLogLocation = os.getenv("FRONTEND_LOG_LOCATION")
+        self.peerDataCSVLocation = os.getenv("PEER_DATA_CSV_LOCATION")
+        self.serverDataJSONLocation = os.getenv("SERVER_DATA_JSON_LOCATION")
         
         #*LOGGING
         # Create a colored formatter for console output
@@ -66,7 +78,7 @@ class SignalingServer:
         self.consoleLogHandler.setFormatter(self.logFormatter)
 
         # Frontend handler
-        self.frontendLogHandler = logging.FileHandler(r"C:\Users\iniga\OneDrive\Programming\P2P Storage\Websites\ServerLog.log")
+        self.frontendLogHandler = logging.FileHandler(frontendLogLocation)
         self.frontendLogHandler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
         self.frontendLogHandler.setLevel(self.mainLoggingLevel)  
         
@@ -91,30 +103,77 @@ class SignalingServer:
         self.logger.addHandler(self.frontendLogHandler)       
     
     def Shutdown(self):
-        shouldShutdown = input("Enter COMMENCE SHUTDOWN to shutdown server")
-        if(shouldShutdown.strip().upper() == "COMMENCE SHUTDOWN"):
-            self.shuttingDown = True
-            
-            self.logger.info("BEGINNING SHUTDOWN SEQUENCE")
-            self.logger.info("CLOSING ALL THREADS")
-            #Waiting for all threads to finish
-            for t in self.threads:
-                t.join()
+        self.shuttingDown = True
         
-            #Telling all users to finish
-            self.logger.info("CLOSING ALL PEERS")
-            for peer in self.peers:
-                connectionSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                connectionSocket.connect((self.peers[peer]["ip"], self.peers[peer]["port"]))
-                shutdownMessage = {"type" : "serverShutdown"}
-                connectionSocket.send(json.dumps(shutdownMessage).encode())
-                connectionSocket.close()
+        self.logger.info("BEGINNING SHUTDOWN SEQUENCE")
+        self.logger.info("CLOSING ALL THREADS")
+        #Waiting for all threads to finish
+        for t in self.threads:
+            t.join()
+    
+        #Telling all users to finish
+        self.logger.info("CLOSING ALL PEERS")
+        for peer in self.peers:
+            connectionSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            connectionSocket.connect((self.peers[peer]["ip"], self.peers[peer]["port"]))
+            shutdownMessage = {"type" : "serverShutdown"}
+            connectionSocket.send(json.dumps(shutdownMessage).encode())
+            connectionSocket.close()
+        
+        
+        #Closing server
+        self.logger.info("SHUTTING SERVER. GOODBYE")
+        self.serverSocket.close()
+        self.serverActive = False
             
+    def FillOldValues(self):
+        with self.chartDataLock:
+            with open(self.peerDataCSVLocation, "r") as fileHandle:
+                lines = fileHandle.readlines()
             
-            #Closing server
-            self.logger.info("SHUTTING SERVER. GOODBYE")
-            self.serverSocket.close()
+            csvDatetimes = []
+            for line in lines:
+                line = line.strip("\n")
+                lineTimestamp  = line.split(",")[0]
+                lineHour = int(lineTimestamp.split("--")[0])
+                lineDate = (lineTimestamp.split("--")[1]).split("-")
+                lineDay = int(lineDate[0])
+                lineMonth = int(lineDate[1])
+                lineYear = int(lineDate[2])
+                
+                csvDatetimes.append([datetime(hour=lineHour, day=lineDay,month=lineMonth,year=lineYear), line.split(",")[1]])
+
+            #print(f"CSV : {csvDatetimes}")
             
+            csvDatetimes.reverse()
+            newLines = []
+                
+            lastTime = datetime.now()
+            i = 0
+            while(len(newLines) < 720):
+                if(i<len(csvDatetimes)) and (lastTime - csvDatetimes[i][0]) <= timedelta(hours=1):
+                    #Correct setup
+                    newLines.append(csvDatetimes[i])
+                    lastTime = csvDatetimes[i][0]
+                    i+= 1
+                else:
+                    newLines.append([lastTime,"0"])
+                    lastTime -= timedelta(hours=1)
+            
+            #Formatting back into strings
+            newLines.reverse()
+            newLinesOutput = []
+            for newLine in newLines:
+                newLineDatetime = newLine[0]
+                newLinesOutput.append(f"{newLineDatetime.hour}--{newLineDatetime.day}-{newLineDatetime.month}-{newLineDatetime.year},{newLine[1]}\n")
+           
+            newLinesOutput[719] = newLinesOutput[719].strip("\n") 
+                          
+            #Writing
+            with open(self.peerDataCSVLocation, "w") as fileHandle:
+                fileHandle.writelines(newLinesOutput)
+                
+            #print(newLinesOutput)
     
     def handle_peer(self, peer_socket):
         try:
@@ -186,7 +245,7 @@ class SignalingServer:
         finally:
             peer_socket.close()
             
-    def FileDeletor(self): #TODO
+    def FileDeletor(self):
         try:
             while not self.shuttingDown:
                 time.sleep(10)
@@ -233,12 +292,14 @@ class SignalingServer:
                         cursor.execute("DELETE FROM files WHERE fileID = ?", (fileID,))
                         databaseConn.commit()
 
-                        
+                #Update JSON
+                UpdateJSON("Files To Delete",len(self.filesToDelete),self.serverDataJSONLocation , "ServerData")
+                   
         except Exception as e:
             self.logger.error(f"Error {e} in FileDeletor", exc_info=True)
         
 
-    def DeleteFile(self, fileID, userIP, userPort, connectionSocket, chunkIndex): #TODO
+    def DeleteFile(self, fileID, userIP, userPort, connectionSocket, chunkIndex): 
         try:
             self.logger.debug(f"chunkIndex in DELETEFILE : {chunkIndex}")
             deleteMessage = {"type": "deleteFileServerRequest"}
@@ -347,8 +408,8 @@ class SignalingServer:
                     self.logger.debug(f"{user} is user")
                     chunkData = self.RequestChunkFromUser(user, fileID, chunkIndex, ownerUserCode)
                     
-                    #!TEMP
                     self.logger.debug(f"OUTPUT OF RequestFileFromUser : {chunkData.decode()}")    
+                    
                     self.AddChunkToFile(fileStorageName,chunkIndex,chunkData)
                     downloadedChunks.add(chunkIndex)
             
@@ -375,6 +436,17 @@ class SignalingServer:
                 while(self.runningHeartbeatCheck):
                     self.logger.debug("Waiting for heartbeating to finish")
                     time.sleep(0.1) #Making sure we run AFTER check is done
+                
+                #Update JSON
+                databaseConn = sqlite3.connect("PeersP2PStorage.db")
+                cursor = databaseConn.cursor()
+                cursor.execute("SELECT * FROM filesToReturn")
+                rows = cursor.fetchall()
+                UpdateJSON("Files To Return",len(rows),self.serverDataJSONLocation, "ServerData")
+                databaseConn.close()
+                
+                
+                self.CheckPeersConnected()
                 for peer in self.peers:   
                     connectionSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                     peerIP = self.peers[peer]["ip"]
@@ -387,8 +459,6 @@ class SignalingServer:
                         continue
                     
                     try:
-                        self.CheckPeersConnected()
-                        
                         self.logger.debug(f"IP {peerIP} PORT {peerPort}")
                         connectionSocket.connect((peerIP,peerPort)) 
                         self.logger.debug("CONNECTION SUCCEEDED")
@@ -404,7 +474,10 @@ class SignalingServer:
                             self.ReturnFile(row[0], row[1], connectionSocket)
                             cursor.execute("DELETE FROM filesToReturn WHERE ownerUserCode = ?", (userCode,))
                             databaseConn.commit()
-                            
+                        
+                        cursor.execute("SELECT * FROM filesToReturn WHERE ownerUserCode = ?", (userCode,))
+                        rows = cursor.fetchall() 
+                        self.logger.debug(f"ROWS 123 {rows}")
                             
                         
                     except Exception as e:
@@ -417,7 +490,7 @@ class SignalingServer:
 
     def ReturnFile(self, fileID, userCode, connectionSocket): 
         try:
-            storageFolderPath = r"C:\Users\iniga\OneDrive\Programming\P2P Storage\Files To Return"
+            storageFolderPath = self.filesToReturnLocation
             filePath = f"{storageFolderPath}/USERCODE-{userCode}--FILEID-{fileID}.bin"
             with open(filePath, "rb") as fileHandle:
                 self.logger.debug(f"Attempting to return {fileID}")
@@ -453,7 +526,7 @@ class SignalingServer:
         except Exception as e:
             self.logger.error(f"Error {e} in ReturnFile", exc_info=True)
 
-    def RequestChunkFromUser(self, targetUserCode, fileID, chunkIndex, ownerUserCode): #TODO
+    def RequestChunkFromUser(self, targetUserCode, fileID, chunkIndex, ownerUserCode):
         try:
             self.logger.debug(f"REQUESTCHUNKFROMUSER | {targetUserCode} {fileID} {chunkIndex}")
 
@@ -509,7 +582,7 @@ class SignalingServer:
             
             
             #Generate file for usage
-            folderStoragePath = r"C:\Users\iniga\OneDrive\Programming\P2P Storage\Files To Return"
+            folderStoragePath = self.filesToReturnLocation
             fileStorageName = f"{folderStoragePath}/USERCODE-{ownerUserCode}--FILEID-{fileID}.bin"
             with open(fileStorageName, "wb") as fileHandle:
                 fileHandle.truncate()
@@ -517,7 +590,6 @@ class SignalingServer:
             cursor.execute("INSERT INTO filesToRequest (fileID, downloadedChunks, chunkCount, fileStorageName) VALUES (?, ?, ?, ?)", (fileID,json.dumps({}), chunkCount, fileStorageName))
             conn.commit()
             
-            #!TEMP
             self.RequestFileFromUser(fileID)
             
         except sqlite3.IntegrityError:
@@ -534,6 +606,26 @@ class SignalingServer:
             #Ping each peer 
             
             self.CheckPeersConnected()
+            
+            #Checking timestamp 
+            today = date.today()
+            currentTimestamp = datetime.now().time()
+            currentTimeHours = datetime(today.year,today.month,today.day,currentTimestamp.hour)
+            if(self.lastHourReading == None) or ((currentTimeHours - self.lastHourReading) >= (timedelta(hours=1))):
+                #Update chart data
+                self.logger.debug("UPDATING CHART DATA")
+                self.lastHourReading = currentTimeHours
+                with self.chartDataLock:
+                    with open(self.peerDataCSVLocation, "r") as fileHandle:
+                        lines = fileHandle.readlines()
+                    while(len(lines) > 719):
+                        lines.pop(0)
+                    #New Entry
+                    lines.append(f"\n{currentTimeHours.hour}--{currentTimeHours.day}-{currentTimeHours.month}-{currentTimeHours.year},{len(self.peers)}")
+                    with open(self.peerDataCSVLocation, "w") as fileHandle:
+                        fileHandle.writelines(lines)
+        
+            UpdateJSON("Peers Connected", len(self.peers), self.serverDataJSONLocation, "ServerData")
 
     def CheckPeersConnected(self):
         self.runningHeartbeatCheck = True
@@ -614,6 +706,7 @@ class SignalingServer:
             return None
 
     def start(self):
+        self.serverActive = True
         self.serverSocket.bind((self.host, self.port))
         self.serverSocket.listen(5)
         self.logger.info(f"Signaling server running on {self.host}:{self.port}")
@@ -676,11 +769,14 @@ class SignalingServer:
         
         databaseConnection.close()
         
-        threading.Thread(target=self.Shutdown).start()
+        #threading.Thread(target=self.Shutdown).start()
+        
+        #Filling Old Values
+        self.FillOldValues()
         
         #Starting File Distributor
         try:
-            t = threading.Thread(target= self.FileDistributor, args = (r"C:\Users\iniga\OneDrive\Programming\P2P Storage\Files To Send", ), daemon=True)
+            t = threading.Thread(target= self.FileDistributor, args = (self.filesToSendLocation, ), daemon=True)
             t.start()
             self.threads.append(t)
         except Exception as e:
@@ -817,6 +913,8 @@ class SignalingServer:
                     else:
                         counter += 1
                         self.logger.warning(f"CANNOT DISTRIBUTE {filesList} - NOT READY")
+                
+                UpdateJSON("Files In Storage", len(os.listdir(folderFilePath)), self.serverDataJSONLocation, "ServerData")
                 
                 #Waiting for a bit to avoid spam 
                 time.sleep(10)
@@ -961,11 +1059,20 @@ class SignalingServer:
 #*Flask shenanigans
 app = Flask(__name__)
 CORS(app)  # Allows cross-origin requests
+preferencesJSONLock = threading.Lock()
+serverDataJSONLock = threading.Lock()
+
+#.env data
+frontendLogLocation = os.getenv("FRONTEND_LOG_LOCATION")
+peerDataCSVLocation = os.getenv("PEER_DATA_CSV_LOCATION")
+serverDataJSONLocation = os.getenv("SERVER_DATA_JSON_LOCATION")
+themesJSONLocation = os.getenv("THEMES_JSON_LOCATION")
+preferencesJSONLocation = os.getenv("PREFERENCES_JSON_LOCATION")
 
 @app.route('/api/Themes', methods=['GET'])
 def ReturnThemeJSON():
     try:
-        with open(r'C:\Users\iniga\OneDrive\Programming\P2P Storage\Websites\Themes.json', 'r') as file:
+        with open(themesJSONLocation, 'r') as file:
             data = json.load(file)
         return jsonify(data) 
     
@@ -978,7 +1085,7 @@ def ReturnThemeJSON():
 @app.route('/api/Log', methods=['GET'])
 def ReturnLog():
     try:
-        with open(r'C:\Users\iniga\OneDrive\Programming\P2P Storage\Websites\ServerLog.log', 'r') as file:
+        with open(frontendLogLocation, 'r') as file:
             data = file.read()  # Read the content of the log file as text
         return Response(data, mimetype='text/plain')  # Return plain text response
     
@@ -988,17 +1095,11 @@ def ReturnLog():
     except Exception as e:
         return jsonify({"error": f"An error occurred: {str(e)}"}), 500
 
-@app.route('/api/data', methods=['GET'])
-def get_data():
-    # Sample data
-    data = {"message": "Hello from Flask!", "status": "success"}
-    return jsonify(data)
-
 @app.route('/api/Preferences', methods=['GET'])
 def ReturnPreferences():
     try:
         print("!234")
-        with open(r'C:\Users\iniga\OneDrive\Programming\P2P Storage\Websites\Preferences.json', 'r') as file:
+        with open(preferencesJSONLocation, 'r') as file:
             data = json.load(file)
         return jsonify(data) 
     
@@ -1011,7 +1112,7 @@ def ReturnPreferences():
 @app.route('/api/ServerData', methods=['GET'])
 def ReturnServerData():
     try:
-        with open(r'C:\Users\iniga\OneDrive\Programming\P2P Storage\Websites\ServerData.json', 'r') as file:
+        with open(serverDataJSONLocation, 'r') as file:
             data = json.load(file)
         return jsonify(data) 
     
@@ -1024,23 +1125,29 @@ def ReturnServerData():
 @app.route('/api/ServerCSV', methods=['GET'])
 def ReturnServerCSV():
     try:
-        with open(r'C:\Users\iniga\OneDrive\Programming\P2P Storage\Websites\TestData.csv', 'r') as file:
+        with open(peerDataCSVLocation, 'r') as file:
             csv_reader = csv.reader(file)
             data = [row for row in csv_reader]
         return jsonify(data) 
     
     except FileNotFoundError:
-        return jsonify({"error": "TestData.csv not found"}), 404
+        return jsonify({"error": "PeerData.csv not found"}), 404
     
     except json.JSONDecodeError:
-        return jsonify({"error": "TestData.csv   is not valid JSON"}), 500
+        return jsonify({"error": "PeerData.csv   is not valid JSON"}), 500
 
-def UpdateJSON(key, value, path):
-    with open(path, "r") as fileHandle:
-        data = json.load(fileHandle)
-        data[key] = value
-    with open(path, "w") as fileHandle:
-        json.dump(data, fileHandle, indent=4)
+def UpdateJSON(key, value, path, lockType):
+    lockTypeDict = {
+        "Preference" : preferencesJSONLock,
+        "ServerData" : serverDataJSONLock,
+    }
+    lockType = lockTypeDict[lockType]
+    with lockType:
+        with open(path, "r") as fileHandle:
+            data = json.load(fileHandle)
+            data[key] = value
+        with open(path, "w") as fileHandle:
+            json.dump(data, fileHandle, indent=4)
 
 @app.route('/api/Post/LogLevel', methods=['POST'])
 def UpdateLogLevel():
@@ -1059,7 +1166,7 @@ def UpdateLogLevel():
     server.frontendLogHandler.setLevel(server.mainLoggingLevel)
     
     #Updating jsons
-    UpdateJSON("LogLevel", newLogLevel, r"C:\Users\iniga\OneDrive\Programming\P2P Storage\Websites\Preferences.json")
+    UpdateJSON("LogLevel", newLogLevel, preferencesJSONLocation, "Preference")
     return jsonify({"message": "Data received!", "received": content})
 
 @app.route('/api/Post/ChangeThemePreference', methods=['POST'])
@@ -1070,9 +1177,48 @@ def ChangeThemePreferences():
     newColour = content["colour"]
     
     #Updating jsons
-    UpdateJSON("Theme", newColour, r"C:\Users\iniga\OneDrive\Programming\P2P Storage\Websites\Preferences.json")
+    UpdateJSON("Theme", newColour, preferencesJSONLocation, "Preference")
+    return jsonify({"message": "Data received!", "received": content})
+
+@app.route('/api/Post/UpdateChartType', methods=['POST'])
+def UpdateChartType():
+    content = request.json  # Get JSON from the request body
+    print("Received:", content)
+    #update logging software
+    newChartType = content["ChartType"]
+    
+    #Updating jsons
+    UpdateJSON("ChartType", newChartType, preferencesJSONLocation, "Preference")
     return jsonify({"message": "Data received!", "received": content})
     
+@app.route('/api/Post/ShutdownServer', methods=['POST'])
+def ShutdownServer():
+    content = request.json  # Get JSON from the request body
+    threading.Thread(target=server.Shutdown).start()
+    return jsonify({"message": "Data received!", "received": content})
+
+@app.route('/api/ServerStatus', methods=['GET'])
+def ReturnServerStatus():
+    try:
+        return jsonify({"serverStatus" : server.serverActive}) 
+    
+    except:
+        return jsonify({"serverStatus" : None})
+    
+@app.route('/api/Post/ClearLog', methods=['POST'])
+def ClearLog():
+    with serverDataJSONLock:
+        content = request.json  # Get JSON from the request body
+        with open(frontendLogLocation, "w") as fileHandle:
+            pass #For some reason this clears the file
+        return jsonify({"message": "Data received!", "received": content})
+    
+@app.route('/api/Post/StartServer', methods=['POST'])
+def StartServer():
+    content = request.json  # Get JSON from the request body
+    if not(server.serverActive):
+        server.start()
+    return jsonify({"message": "Data received!", "received": content})
 
 if __name__ == '__main__':
     server = SignalingServer()

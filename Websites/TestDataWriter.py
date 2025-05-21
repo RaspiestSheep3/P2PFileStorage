@@ -1,7 +1,7 @@
-dayCounter = 1
-month = 12
+dayCounter = 19
+month = 4
 year = 2025
-hourCounter = 0
+hourCounter = 22
 
 import random
 
@@ -13,4 +13,7 @@ with open("TestData.csv", "w") as fileHandle:
         if(hourCounter > 23):
             hourCounter = 0
             dayCounter += 1
+            if(dayCounter > 30):
+                dayCounter = 1
+                month += 1
     
