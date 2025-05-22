@@ -8,3 +8,4 @@ File Output/
 PeerData.csv
 .env
 TestDataWriter.py
+*.json

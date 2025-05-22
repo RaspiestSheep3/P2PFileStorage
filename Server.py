@@ -1098,7 +1098,6 @@ def ReturnLog():
 @app.route('/api/Preferences', methods=['GET'])
 def ReturnPreferences():
     try:
-        print("!234")
         with open(preferencesJSONLocation, 'r') as file:
             data = json.load(file)
         return jsonify(data) 
@@ -1127,7 +1126,16 @@ def ReturnServerCSV():
     try:
         with open(peerDataCSVLocation, 'r') as file:
             csv_reader = csv.reader(file)
-            data = [row for row in csv_reader]
+            data = []
+            for row in csv_reader:
+                timestamp = row[0]
+                date = (timestamp.split("--")[1]).split("-")
+                hour = timestamp.split("--")[0]
+                datetimeObject = datetime(int(date[2]), int(date[1]), int(date[0]), int(hour))
+                dayLabel = datetimeObject.strftime("%A")[0:3]
+                dateLabel = f'{dayLabel} {datetimeObject.strftime("%H:00 %d-%m-%Y")}'
+                data.append([dateLabel, row[1]])       
+        
         return jsonify(data) 
     
     except FileNotFoundError:

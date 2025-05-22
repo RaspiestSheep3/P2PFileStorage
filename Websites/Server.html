@@ -580,8 +580,9 @@
             const B = [];
             for (let i = list.length - 1; i >= 0 && B.length < length; i--) {
                 let dataChunk = list[i][0];
-                dataChunk = dataChunk.split("--");
-                if (dataChunk[0] == 0) {
+                //WED 12:00 21-05-2025
+                dataChunk = dataChunk.split(" ");
+                if (dataChunk[1] == "12:00") {
                     B.push(list[i]);
                 }
             }
@@ -604,7 +605,10 @@
             if(drawType == "24h"){    
                 userData = chartData.slice(-24);
                 console.log(`USERDATA ${userData}`);
+                //customLabels = userData.map(subarray => (subarray[0]).split(" ")[1]);
                 customLabels = userData.map(subarray => subarray[0]);
+                //userData = userData.map(subarray => [subarray[0].split(" ")[1], subarray[1]])
+                console.log(`CUSTOM LABELS ${customLabels}`)
             }
 
             else if(drawType == "7d"){
@@ -632,8 +636,32 @@
                 },
                 options: {
                     responsive: false,
-                    maintainAspectRatio: false
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: {
+                            ticks: {
+                                callback: function(value){
+                                    if(drawType == "24h"){
+                                        console.log(`VALUE ${value} ${customLabels[value]}`)
+                                        return customLabels[value].split(" ")[1];
+                                    }
+                                    else if(drawType == "7d"){
+                                        return `${customLabels[value].split(" ")[0]} ${customLabels[value].split(" ")[1]}`;
+                                    }
+                                    else if(drawType == "30d"){
+                                        return `${customLabels[value].split(" ")[2]}`;
+                                    }
+                                    else{
+                                        return customLabels[value];
+                                    }
+                                },
+                                autoSkip: true,
+                                maxTicksLimit: 12
+                            }
+                        }
+                    }
                 }
+                
             });
             
         }
@@ -806,6 +834,8 @@
             document.getElementById("FilesInStorage").textContent = serverData["Files In Storage"];
             document.getElementById("FilesToDelete").textContent = serverData["Files To Delete"];
             document.getElementById("FilesToReturn").textContent = serverData["Files To Return"];
+            document.getElementById("portDisplay").textContent = serverData["Port"]; 
+            document.getElementById("IPDisplay").textContent = serverData["IP"];
             
             DrawGraph(graphDrawType);
 
