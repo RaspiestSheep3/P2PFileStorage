@@ -9,5 +9,6 @@ PeerData.csv
 .env.server
 .env.peer
 TestDataWriter.py
-*.json
+**/*.json
 TestFileCipher.txt
+Notes.txt

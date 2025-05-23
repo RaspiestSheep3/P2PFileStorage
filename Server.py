@@ -28,6 +28,12 @@ if(os.path.exists(f"ServerGeneral.log")):
 #Setting up .env
 load_dotenv(dotenv_path=".env.server")
 
+#No exc_info in logging
+class NoStackTraceFormatter(logging.Formatter):
+    def format(self, record):
+        record.exc_info = None  # removes stack trace
+        return super().format(record)
+
 # Signaling server class
 class SignalingServer:
     def __init__(self, host='0.0.0.0', port=12345):
@@ -52,6 +58,7 @@ class SignalingServer:
         self.mainLoggingLevel = logging.INFO
         self.serverActive = False
         self.lastHourReading = None
+        self.fileIDLock = threading.Lock()
         
         #.env
         self.filesToReturnLocation = os.getenv("SERVER_FILES_TO_RETURN_FOLDER_LOCATION")
@@ -79,7 +86,7 @@ class SignalingServer:
 
         # Frontend handler
         self.frontendLogHandler = logging.FileHandler(frontendLogLocation)
-        self.frontendLogHandler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
+        self.frontendLogHandler.setFormatter(NoStackTraceFormatter("%(asctime)s - %(levelname)s - %(message)s"))
         self.frontendLogHandler.setLevel(self.mainLoggingLevel)  
         
         # General handler
@@ -924,6 +931,7 @@ class SignalingServer:
     def DistributeFileToPeers(self, fileName, filePath):
         try:
             fileNameCopy = fileName.split("--")
+            self.logger.debug(f"FILENAMECOPY {fileNameCopy}")
             userCode = (fileNameCopy[0].strip("userCode"))
             
             totalChunkCount = math.ceil(os.path.getsize(filePath) / 1024)
@@ -933,14 +941,16 @@ class SignalingServer:
             #Finding code to use
             conn = sqlite3.connect("PeersP2PStorage.db")
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM lastUsedFileID")
+            # cursor.execute("SELECT * FROM lastUsedFileID")
             
-            self.logger.debug(f"TEST 1.1   |{self.lastUsedFileID}")
+            # self.logger.debug(f"TEST 1.1   |{self.lastUsedFileID}")
 
-            if(self.lastUsedFileID == None):
-                self.lastUsedFileID ="AAAA AAAA"
+            # if(self.lastUsedFileID == None):
+            #     self.lastUsedFileID ="AAAA AAAA"
             
-            fileID = (self.lastUsedFileID)
+            # fileID = (self.lastUsedFileID)
+            
+            fileID = (fileNameCopy[2]).lstrip("fileID").rstrip(".bin")
             
             self.logger.debug(f"FILEID : {fileID}")
             self.logger.debug("TEST 2")
@@ -1036,12 +1046,28 @@ class SignalingServer:
             #Finding file code
             self.logger.debug(f"TEST 1.2   |{self.lastUsedFileID}")
             
-            if(self.lastUsedFileID == None):
-                self.lastUsedFileID = "AAAA AAAA"
-            fileID = self.IncreaseCode(self.lastUsedFileID)
-            self.lastUsedFileID = fileID
-            fileName = f"userCode{userCode}--{datetime.now().strftime('%d_%m_%Y-%H_%M_%S')}--fileID{fileID}.bin"
-            
+            with self.fileIDLock:
+                databaseConn = sqlite3.connect("PeersP2PStorage.db")
+                cursor = databaseConn.cursor()
+                
+                cursor.execute("SELECT * FROM lastUsedFileID")
+                row = cursor.fetchone()
+                if(row == None):
+                    self.lastUsedFileID = "AAAA AAAA"
+                else:
+                    self.lastUsedFileID = row[0]
+                
+                self.logger.debug(f"TEST 1.3   |{self.lastUsedFileID}")
+                
+                fileID = self.IncreaseCode(self.lastUsedFileID)
+                self.logger.debug(f"TEST 1.4 : {fileID}")
+                fileName = f"userCode{userCode}--{datetime.now().strftime('%d_%m_%Y-%H_%M_%S')}--fileID{fileID}.bin"
+                if(row == None):
+                    cursor.execute("INSERT INTO lastUsedFileID (lastUsedfileID) VALUES (?);", (fileID,))
+                else:
+                    cursor.execute("UPDATE lastUsedFileID SET lastUsedFileID = ?;", (fileID,))
+                databaseConn.commit()
+                databaseConn.close()
             
             with open(rf"Files To Send\{fileName}", "wb") as fileHandle:
                 for chunk in receivedChunks:
