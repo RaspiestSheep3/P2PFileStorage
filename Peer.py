@@ -3,16 +3,21 @@ import json
 import threading
 from datetime import datetime
 import os
-from cryptography.hazmat.primitives import padding
+from cryptography.hazmat.primitives import padding, hashes
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 import logging
 import colorlog
 import sqlite3
 import math
+from dotenv import load_dotenv
 
 waitingForFiles = True
 deviceName = datetime.now().strftime("%H:%M:%S")
 userCode = input("USER CODE : ") #!TEMP
 testPort = int(input("TARGET PORT : ")) #!TEMP
+password = input("PASSWORD : ") #!TEMP
 
 #!TEMP
 if(input("SHOULD DELETE FILES? : ").strip().upper() == "Y"):
@@ -22,6 +27,9 @@ if(input("SHOULD DELETE FILES? : ").strip().upper() == "Y"):
         os.remove(f"Peer{userCode}Errors.log")
     if(os.path.exists(f"Peer{userCode}FileDatabse.db")):
         os.remove(f"Peer{userCode}FileDatabse.db")
+
+#Setting up .env
+load_dotenv(dotenv_path=".env.peer")
 
 class Peer:
     def __init__(self, signalingServerHost='127.0.0.1', signalingServerPort=12345, name=""):
@@ -70,7 +78,29 @@ class Peer:
                 
         #!TESTING
         self.logger.debug(f"TEST PORT : {testPort}")
-
+        
+        #Setting up .env and json 
+        self.peerJSONLocation = os.getenv("PEER_JSON_LOCATION").replace("___", userCode)
+        self.encryptionIterations = int(os.getenv("ENCRYPTION_ITERATIONS"))
+        
+        if(not os.path.isfile(self.peerJSONLocation)):
+            with open(self.peerJSONLocation, "w") as fileHandle:
+                fileHandle.write('{\n"salt" : "' + userCode + '"\n}')
+        
+        #Setting up encryption 
+        with open(self.peerJSONLocation, "r") as fileHandle:
+            data = json.load(fileHandle)
+            self.encryptionSalt = data["salt"].encode("utf-8")
+        self.kdf = PBKDF2HMAC(
+            algorithm=hashes.SHA256(),
+            length=32,                      # 16 bytes = AES-128, use 32 for AES-256
+            salt=self.encryptionSalt,
+            iterations=self.encryptionIterations,
+            backend=default_backend()
+        )
+        self.key = self.kdf.derive(password.encode("utf-8"))
+        self.aesgcm = AESGCM(self.key)
+    
         # Start listening for file transfer before registering with the server
         self.listenerSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.listenerSocket.bind(('127.0.0.1', testPort)) 
@@ -92,7 +122,8 @@ class Peer:
                 fileUserName TEXT NOT NULL UNIQUE,
                 fileName TEXT NOT NULL,
                 fileExtension TEXT NOT NULL,
-                fileSize INTEGER NOT NULL
+                fileSize INTEGER NOT NULL,
+                nonceList BLOB NOT NULL
             )
             ''') 
             
@@ -132,13 +163,6 @@ class Peer:
             
             chunkedData = []
             
-            fileSize = os.path.getsize(filePath)
-            totalChunkCount = fileSize // 1024
-            if(fileSize % 1024 != 0):
-                totalChunkCount += 1
-            
-            self.logger.info(f"FILE SIZE {fileSize}")
-            
             #Setting file extension
             filePathBase = os.path.basename(filePath)
             fileName, fileExtension = os.path.splitext(filePathBase)
@@ -147,11 +171,30 @@ class Peer:
             serverSocket.send(json.dumps({"type" : "uploadPing", "userCode" : userCode}).encode())
             response = json.loads(serverSocket.recv(64).decode())
             if (response) and (response["type"] == "uploadPong") and (response["status"] == "accept"):
-                #We can send files
-
-                serverSocket.send(str(totalChunkCount).zfill(8).encode())            
+                #We can send files      
                 
-                with open(filePath,"rb") as fileHandle:
+                #Making a temporary copy with the encrypted data
+                
+                nonceList = []
+                ciphertextFilePath = (filePath.replace(fileExtension, "")) + "Cipher" + fileExtension
+                
+                with open(filePath, "rb") as fileHandle:
+                    with open(ciphertextFilePath, "wb") as fileHandleWrite:
+                        for chunkIndex in range(math.ceil(os.path.getsize(filePath)/(1024 * 128))):
+                            chunk = fileHandle.read(1024 * 128)
+                            nonce = os.urandom(12)
+                            ciphertext = self.aesgcm.encrypt(nonce, chunk, None)
+                            fileHandleWrite.write(ciphertext)
+                            nonceList.append(nonce)
+                    print(f"NONCELIST {nonceList}")
+
+                totalChunkCount = os.path.getsize(ciphertextFilePath) // 1024
+                if(os.path.getsize(ciphertextFilePath) % 1024 != 0):
+                    totalChunkCount += 1
+                
+                serverSocket.send(str(totalChunkCount).zfill(8).encode())      
+
+                with open(ciphertextFilePath,"rb") as fileHandle:
                     for chunkIndex in range(totalChunkCount):
                             chunk = fileHandle.read(1024)
                             
@@ -170,6 +213,9 @@ class Peer:
                             serverSocket.send(chunk)  # Send data chunk
                             self.logger.info(f"Sent chunk {chunkIndex + 1}/{totalChunkCount} ({1024} bytes)")
 
+                #Killing the cipher file
+                os.remove(ciphertextFilePath)
+
                 #Receive fileID
                 fileIDMessage = json.loads(serverSocket.recv(64).decode().rstrip("\0"))
                 self.logger.debug(f"FILE ID MESSAGE : {fileIDMessage}")
@@ -177,7 +223,7 @@ class Peer:
                 databaseConnection = sqlite3.connect(f'Peer{userCode}FileDatabse.db')
                 cursor = databaseConnection.cursor()
                 
-                cursor.execute("INSERT INTO fileNameTracker (fileID, fileUserName, fileName, fileExtension, fileSize) VALUES (?, ?, ?, ?, ?)", (fileIDMessage["fileID"], fileNameUser, fileName, fileExtension, os.path.getsize(filePath)))
+                cursor.execute("INSERT INTO fileNameTracker (fileID, fileUserName, fileName, fileExtension, fileSize, nonceList) VALUES (?, ?, ?, ?, ?, ?)", (fileIDMessage["fileID"], fileNameUser, fileName, fileExtension, os.path.getsize(filePath), b",".join(nonceList)))
                 databaseConnection.commit()
                 databaseConnection.close()
                 
@@ -194,10 +240,13 @@ class Peer:
             cursor = databaseConn.cursor()
             cursor.execute("SELECT * FROM fileNameTracker WHERE fileID = ?", (fileID,))
             row = cursor.fetchone()
+            fileOutputNameCipher = row[2] + "Cipher.bin"
             fileOutputName = row[2] + row[3]
-            fileOutputPath = r"C:\Users\iniga\OneDrive\Programming\P2P Storage\File Output"
+            fileOutputPath = os.getenv("FILE_OUTPUT_PATH")
             
-            with open(f"{fileOutputPath}/{fileOutputName}", "w+b") as fileHandle:
+            #!LABEL
+            
+            with open(f"{fileOutputPath}/{fileOutputNameCipher}", "w+b") as fileHandle:
                 fileHandle.truncate(row[4])
                 #Receiving data
                 for i in range(math.ceil(row[4] / 1024)):
@@ -209,6 +258,20 @@ class Peer:
                     chunkData = connectionSocket.recv(detailsDecoded["chunkLength"])
                     fileHandle.seek(detailsDecoded["chunkIndex"] * 1024)
                     fileHandle.write(chunkData)
+            
+            #Decrypting file
+            with open(f"{fileOutputPath}/{fileOutputNameCipher}", "rb") as fileHandle:
+                with open(f"{fileOutputPath}/{fileOutputName}", "wb") as fileHandleWrite:
+                    for chunkIndex in range(math.ceil(os.path.getsize(f"{fileOutputPath}/{fileOutputNameCipher}") / (1024 * 128))):
+                        chunk = fileHandle.read(1024 * 128)
+                        nonce = row[5].split(b",")[chunkIndex]
+                        decryptedChunk = self.aesgcm.decrypt(nonce, chunk, None)
+                        fileHandleWrite.write(decryptedChunk)  
+            
+            #Deleting cipher file
+            self.logger.debug(f"Deleting file {fileOutputPath}/{fileOutputNameCipher}")
+            os.remove(f"{fileOutputPath}/{fileOutputNameCipher}")
+            
         except Exception as e:
             self.logger.error(f"Error {e} in ReceiveReturnFile", exc_info=True)
                 
@@ -264,7 +327,7 @@ class Peer:
                     targetUserCode = chunkDetailsDecoded["userCode"]
                     
                     #Finding chunk
-                    folderStoragePath = r"C:/Users/iniga/OneDrive/Programming/P2P Storage/Received Files"
+                    folderStoragePath = os.getenv("FILE_STORAGE_PATH")
                     
                     #!TEMP - REMOVE USER CODE AT START
                     with open(f"{folderStoragePath}/{userCode}--CODE-{targetUserCode}--INDEX-{chunkIndex}--FILEID-{fileID}.bin", "rb") as fileHandle:
@@ -286,7 +349,7 @@ class Peer:
             chunkIndex = message["chunkIndex"]
             
             #Finding file
-            folderPath = r"C:\Users\iniga\OneDrive\Programming\P2P Storage\Received Files"
+            folderPath = folderStoragePath = os.getenv("FILE_STORAGE_PATH")
             files = [f for f in os.listdir(folderPath) if os.path.isfile(os.path.join(folderPath, f))]
             
             for file in files[:]:
@@ -314,7 +377,7 @@ class Peer:
             chunk = peerSocket.recv(1024)
             
             #Saving chunk data
-            folderWritePath = r"C:/Users/iniga/OneDrive/Programming/P2P Storage/Received Files"
+            folderWritePath = folderStoragePath = os.getenv("FILE_STORAGE_PATH")
             
             #!REMOVE THE USERCODE PHRASE - FOR TESTING
             with open(f'{folderWritePath}/{userCode}--CODE-{chunkData["userCode"]}--INDEX-{chunkData["chunkIndex"]}--FILEID-{chunkData["fileID"]}.bin', "wb") as fileHandle:

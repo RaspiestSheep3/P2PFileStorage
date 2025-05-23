@@ -6,6 +6,8 @@ Files To Return/
 *.db
 File Output/
 PeerData.csv
-.env
+.env.server
+.env.peer
 TestDataWriter.py
 *.json
+TestFileCipher.txt

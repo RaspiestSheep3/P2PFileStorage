@@ -26,7 +26,7 @@ if(os.path.exists(f"ServerGeneral.log")):
     os.remove(f"ServerErrors.log")
     
 #Setting up .env
-load_dotenv()
+load_dotenv(dotenv_path=".env.server")
 
 # Signaling server class
 class SignalingServer:
@@ -408,7 +408,7 @@ class SignalingServer:
                     self.logger.debug(f"{user} is user")
                     chunkData = self.RequestChunkFromUser(user, fileID, chunkIndex, ownerUserCode)
                     
-                    self.logger.debug(f"OUTPUT OF RequestFileFromUser : {chunkData.decode()}")    
+                    #self.logger.debug(f"OUTPUT OF RequestFileFromUser : {chunkData.decode()}")    
                     
                     self.AddChunkToFile(fileStorageName,chunkIndex,chunkData)
                     downloadedChunks.add(chunkIndex)
@@ -827,7 +827,6 @@ class SignalingServer:
         
         targetUsers = []
         
-        #!LABEL
         #Make sure we dont attempt to send to someone whos not on
         self.CheckPeersConnected()
         
@@ -1093,7 +1092,8 @@ def ReturnLog():
         return jsonify({"error": "Test.log not found"}), 404
     
     except Exception as e:
-        return jsonify({"error": f"An error occurred: {str(e)}"}), 500
+        server.logger.error(f"Error {e} in ReturnLog", exc_info=True)
+        return jsonify({"error": f"An unexpected error occurred - check log"}), 500
 
 @app.route('/api/Preferences', methods=['GET'])
 def ReturnPreferences():
