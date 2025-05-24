@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Heimdall Storage - Login</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:ital,wght@0,100..700;1,100..700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/font-awesome/4.7.0/css/font-awesome.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script> 
+    <link rel="icon" type="image/png" href="P2PStorageFavicon_0.png">
+</head>
+
+<style>
+    :root {
+        --backgroundColour: #131626;
+        --mainColour:#4d4d80;
+        --accentColour: #e6a1cf;
+
+        /*Password Check Colours*/
+        --passwordCheckSuccessColour : #96dc92;
+        --passwordCheckErrorColour : #cc1212;
+    }
+    *{
+        margin:0;
+        padding: 0;
+        font-family: "Roboto Mono", serif; /*font to use*/
+    }
+    
+    .displayText{
+        color : var(--mainColour);
+    }
+
+    .header {
+        margin: auto;
+        width: 100%;
+        padding: 10px;
+        min-height: 100px;
+        text-align: center;
+        /*position: absolute; */
+        top:0;
+        margin-bottom: 30px;
+    }
+    
+    .header h1{
+        margin: auto;
+        width: 70%;
+        padding: 10px;
+        text-align: center;
+        color:var(--accentColour);
+        font-size: 60px;
+        border: 3px solid var(--accentColour);
+        border-radius: 20px;
+        /*background-color: #2a173b;*/
+    }
+    
+    body {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        /*height: 100vh; */
+        width: 100%;
+        margin: 0;
+        flex-direction: column;
+        overflow-y: auto;
+        background-color: var(--backgroundColour); 
+        overflow-x: hidden; /* Prevent horizontal scroll */
+    }
+
+    #userLogin {
+        border: 3px solid var(--accentColour);
+        border-radius: 20px;
+        padding: 20px;
+        width: 300px;
+        text-align: center;
+        background-color: var(--backgroundColour);
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+    }
+
+    .inputField {
+        width: 200px;
+        padding: 5px 10px;
+        margin: 10px auto;
+        border: 2px solid var(--accentColour);
+        border-radius: 20px;
+        background-color: var(--backgroundColour);
+        color: var(--mainColour);
+        text-align: center;
+    }
+
+    #loginButton{
+        width: 200px;
+        background-color: var(--backgroundColour);
+        border: 2px solid var(--accentColour);
+        border-radius: 20px;
+        padding: 5px 10px;
+        margin: 10px auto;
+        cursor: pointer;
+        transition: 0.3s ease;
+    }
+
+    #loginButton:hover{
+        color: var(--accentColour);
+        transition: 0.3s ease;
+        font-size: 20px;
+    }
+      
+    #changeLoginModeButton{
+        width: 300px;
+        background-color: var(--backgroundColour);
+        border: 2px solid var(--accentColour);
+        border-radius: 20px;
+        padding: 5px 10px;
+        margin: 10px auto;
+        cursor: pointer;
+        font-weight: bold;
+        color: var(--accentColour);
+        transition: 0.3s ease;
+    }
+
+    #changeLoginModeButton:hover{
+    transition: 0.3s ease;
+    font-size: 20px;
+    }
+
+    #productOverview{
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        width: 1000px;
+        margin: 0;
+        flex-direction: column;
+        background-color: var(--backgroundColour); 
+    } 
+
+    #productOverviewHeader{
+        color: var(--accentColour);
+        font-weight: bold;
+        margin-bottom: 20px;
+        border: 2px solid var(--accentColour);
+        margin-top: 20px;
+        border-radius: 20px;
+        padding: 5px 10px;
+        font-size: 30px;
+    }
+
+    .productOverviewRow{
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        width: 1000px;
+        margin: 0;
+        flex-direction: row;
+        background-color: var(--backgroundColour); 
+    } 
+
+    .productOverviewBox{
+        margin: 10px 20px;
+        border: 3px solid var(--accentColour);
+        border-radius: 20px;
+        padding: 20px 10px;
+        width: 300px;
+        height: 200px;
+        text-align: center;
+        background-color: var(--backgroundColour);
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-start;
+        cursor: pointer;
+    }
+
+    .productOverviewBox h1{
+        color: var(--accentColour);
+        text-decoration: none;
+        font-weight: bold;
+    }
+
+    .productOverviewBox a{
+        color: var(--mainColour);
+        text-decoration: underline;
+        font-weight: bold;
+    }
+
+    .productOverviewBox p{
+        transition: 0.3s ease;
+    }
+
+    .productOverviewBox p:hover{
+        color: var(--accentColour);
+        transition : 0.3s ease;
+    }
+
+    .underlineFade::after {
+        content: "";
+        display: block;
+        height: 2px;
+        background-color: currentColor;
+        transform: scaleX(0);
+        transform-origin: center;
+        opacity: 0;
+        transition: transform 0.3s ease, opacity 0.3s ease;
+    }
+      
+    .underlineFade:hover::after {
+    transform: scaleX(0.7);
+    opacity: 1;
+    }
+
+    .passwordCheckError{
+        color: var(--passwordCheckErrorColour);
+    }
+
+    #passwordCheckDisplay {
+        border: 2px solid var(--accentColour);
+        border-radius: 20px;
+        padding:5px;
+    }
+
+    .colourButton {
+        border : 3px solid var(--accentColour);
+        border-radius: 20px;
+        color: var(--accentColour);
+    }
+
+    #colourSchemeOptions {
+        border : 3px solid var(--mainColour);
+        border-radius: 20px;
+        padding: 5px;
+        text-align: center;
+        margin-top: 10px;
+    }
+
+    .displayButton {
+        border-radius: 20px;
+        margin: 5px 20px;
+        width: 90px;
+        cursor : pointer;
+        transition: 0.2s;
+        padding: 5px 0px;
+        background-color: var(--backgroundColour); 
+    }
+</style>
+
+<body>
+    <section class="header">
+        <h1 class="displayText">Heimdall Storage</h1>
+    </section>
+    <section id="userLogin">
+        <h1 class="displayText" id="userLoginDisplay">LOGIN</h1>
+        <input type="text" id="username" placeholder="Username" class="displayText inputField">
+        <input type="text" id="password" placeholder="Password" class="displayText inputField">
+        <div id="passwordCheckDisplay">
+        </div>
+        <button id="loginButton" class="displayText underlineFade">Login</button>
+        <button id="changeLoginModeButton" class="displayText underlineFade">Create Account</button>
+    </section>
+
+    <section id="colourSchemeOptions">
+        <h2 class="displayText ">Colour Palette Options</h2>
+            <div id="colourButtons">
+                <div id="colourButtonsRow1" class="colourButtonsRow">
+                    <button id="colourButtonGreen" class="displayText displayButton colourButton bold underlineFade" data-color="Green">Green</button>
+                    <button id="colourButtonBlue" class="displayText displayButton colourButton bold underlineFade" data-color="Blue">Blue</button>
+                    <button id="colourButtonRed" class="displayText displayButton colourButton bold underlineFade" data-color="Red">Red</button>
+                    <button id="colourButtonGold" class="displayText displayButton colourButton bold underlineFade" data-color="Gold">Gold</button>
+                </div>
+                <div id="colourButtonsRow2" class="colourButtonsRow">
+                    <button id="colourButtonMonochrome" class="displayText displayButton colourButton bold underlineFade" data-color="Monochrome">Monochrome</button>
+                    <button id="colourButtonPink" class="displayText displayButton colourButton bold underlineFade" data-color="Pink">Pink</button>
+                    <button id="colourButtonMidnight" class="displayText displayButton colourButton bold underlineFade" data-color="Midnight">Midnight</button>
+                    <button id="colourButtonSilver" class="displayText displayButton colourButton bold underlineFade" data-color="Silver">Silver</button>
+                </div>
+            </div>
+    </section>
+
+    <section id="productOverview">
+        <h1 class="displayText" id="productOverviewHeader">Why Choose Heimdall Storage?</h1>
+        <div id="productOverviewRow1" class="productOverviewRow">
+            <div id="SecureEncryption" class="displayText productOverviewBox">
+                <h1 class="displayText  underlineFade">Secure Encryption</h1>
+                <p class="displayText  underlineFade">All files are encrypted using AES-256 encryption to ensure maximum security
+                and privacy. Nobody can read the data but you, not even the server.</p>
+            </div>
+            <div id="PeerBasedStorage" class="displayText productOverviewBox">
+                <h1 class="displayText underlineFade">Peer Based Storage</h1>
+                <p class="displayText underlineFade">All files are stored in a decentralised manner by members of the network - there is no central authority storing the files. This means
+                    it is signifcantly harder for a hacker to erase your data.</p>
+                </p>
+            </div>
+            <div id="DifferentFileTypes" class="displayText productOverviewBox">
+                <h1 class="displayText underlineFade">Multi File Type Support</h1>
+                <p class="displayText underlineFade">The project has support for all file types, and automatically maintains the file 
+                    extension when downloading the file, allowing you to use the system with all your files.</p>
+            </div>
+        </div>
+        <div id="productOverviewRow2" class="productOverviewRow">
+            <div id="EasyUI" class="displayText productOverviewBox">
+                <h1 class="displayText underlineFade">Easy UI</h1>
+                <p class="displayText underlineFade">The project has a simple and minimalistic UI that is easy to use and understand,
+                    even with very little computer knowledge. Features include different themes and a simple file upload system.</p>
+                </p>
+            </div>
+            <div id="DetailedServerOverview" class="displayText productOverviewBox">
+                <h1 class="displayText underlineFade">Detailed Server Overview</h1>
+                <p class="displayText underlineFade">Server owners have access to a detailed and comprehensive dashboard that allows them to
+                    monitor key values such as peer and file count without compromising user privacy.
+                </p>
+            </div>
+            <div id="OpenSourceCode" class="displayText productOverviewBox">
+                <h1 class="displayText underlineFade">Open Source Code</h1>
+                <p class="displayText underlineFade">Project code is open source and available on GitHub. This means that anyone can expand on or contribute to
+                    the project, as well as audit or code review it for free. Code can be found <a href="https://github.com/RaspiestSheep3/P2PFileStorage" target="_blank">here</a>.</p>
+            </div>
+        </div>
+    </section>
+
+    <script>
+        var loginMode = "login"; // Default mode is login
+
+        //Login rules
+        const minPasswordLength = 8
+        const maxPasswordLength = 64
+
+        const outputDisplayDict = {
+            "minLength" : "MIN LENGTH",
+            "maxLength" : "MAX LENGTH",
+            "usernameInPassword" : "USERNAME IN PASSWORD",
+            "uppercase" : "HAS UPPERCASE",
+            "lowercase" : "HAS LOWERCASE",
+            "number" : "HAS A NUMBER",
+            "specialChars" : "HAS SPECIAL CHARACTERS"
+        }
+
+        //Themes
+        var themeData = null;
+
+        async function SetupLoginModeButton(){
+            const loginButton = document.getElementById("loginButton");
+            const changeLoginModeButton = document.getElementById("changeLoginModeButton");
+
+            changeLoginModeButton.addEventListener("click", function() {
+                if (loginMode === "login") {
+                    loginMode = "createAccount";
+                    loginButton.innerText = "Create Account";
+                    changeLoginModeButton.innerText = "Login";
+                } else {
+                    loginMode = "login";
+                    loginButton.innerText = "Login";
+                    changeLoginModeButton.innerText = "Create Account";
+                }
+            });
+
+            loginButton.addEventListener("click", async function() {
+                let username = document.getElementById("username").value;
+                let password = document.getElementById("password").value;
+                if(loginMode === "login"){
+                    const response = await fetch('http://127.0.0.1:8888/api/Post/SendLoginRequest', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({"username" : username, "password": password})
+                    });
+        
+                    const data = await response.json();
+                    console.log("POST Response:", data);
+                }
+                else if(loginMode === "createAccount"){
+                    passwordCheck = CheckPassword(username, password);
+                    var hasFalse = Object.values(passwordCheck).some(value => value === false);
+                    if(hasFalse){
+                        console.log(`Illegal Input : ${passwordCheck}`)
+                        return;
+                    }
+
+                    const response = await fetch('http://127.0.0.1:8888/api/Post/CreateAccount', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({"username" : username, "password": password})
+                    });
+
+                    const data = await response.json();
+                    console.log("POST Response:", data);
+                }
+            });
+        }
+
+        function UpdatePasswordIssueDisplay(usernameField, passwordField, passwordCheckDisplay){
+            if(passwordField.value.trim() !== ""){
+                    data = CheckPassword(usernameField.value, passwordField.value);
+                    passwordCheckDisplay.innerHTML = "";
+                    for (const key in data){
+                        if(data[key] === false){
+                            //Displaying the issue
+                            passwordCheckDisplay.innerHTML += `<p class="displayText passwordCheckError" id="${key}Display">${outputDisplayDict[key]} ❌</p>`
+                        }
+                    }
+
+                    if(!Object.values(data).some(value => value === false)) {
+                        passwordCheckDisplay.style.display = "none";
+                        console.log("TEST : NONE")
+                    }
+                    else passwordCheckDisplay.style.display = "";
+                }
+        }
+
+        function SetPasswordIssueDisplay(){
+            const usernameField = document.getElementById("username");
+            const passwordField = document.getElementById("password");
+            const passwordCheckDisplay = document.getElementById("passwordCheckDisplay");
+            if(passwordField.value === "") passwordCheckDisplay.style.display = "none";
+            passwordField.addEventListener("input", () => {
+                //console.log(`${passwordField.value === ""} ${passwordField.value}`);
+                if(passwordField.value === "") passwordCheckDisplay.style.display = "none";
+                else UpdatePasswordIssueDisplay(usernameField, passwordField, passwordCheckDisplay);
+            });
+
+            usernameField.addEventListener("input", () => {
+                UpdatePasswordIssueDisplay(usernameField, passwordField, passwordCheckDisplay);
+            });
+        } 
+
+        function CheckPassword(username, password){
+            //Length check
+            let output = {
+                "minLength" : true,
+                "maxLength" : true,
+                "usernameInPassword" : true,
+                "uppercase" : true,
+                "lowercase" : true,
+                "number" : true,
+                "specialChars" : true,
+            }
+            
+            if(password.length < minPasswordLength) output["minLength"] = false;
+            if(password.length > maxPasswordLength) output["maxLength"] = false;
+
+            //username in password check
+            if(password.toLowerCase().includes(username.toLowerCase())) output["usernameInPassword"] = false;
+
+            //Uppercase check
+            if(password.toLowerCase() === password) output["uppercase"] = false;
+
+            //Lowercase check
+            if(password.toUpperCase() === password) output["lowercase"] = false;
+
+            //Number check
+            var hasNumber = /\d/; //I think this is regex
+            if (!hasNumber.test(password)) output["number"] = false;
+
+            //Special character check
+            var hasSpecialChar = /[!@_#$%^&£*()\-\+={}\[\]:;<>,.?\/|\\]/; //More regex
+            if(!hasSpecialChar.test(password)) output["specialChars"] = false;
+
+            return output;
+        }
+
+        function ChangeTheme(newThemeColour){
+            let newBackgroundColour = themeData[newThemeColour]["background"]
+            let newMainColour = themeData[newThemeColour]["main"]
+            let newAccentColour = themeData[newThemeColour]["accent"]
+
+            //Updating CSS
+            document.documentElement.style.setProperty("--backgroundColour", newBackgroundColour);
+            document.documentElement.style.setProperty("--mainColour", newMainColour);
+            document.documentElement.style.setProperty("--accentColour", newAccentColour);
+        }
+
+        async function GetThemes(){
+            try {
+                const response = await fetch('http://127.0.0.1:8888/api/GetThemes');
+                if (!response.ok) throw new Error("Network response was not OK");
+                let data = await response.json();
+                console.log("2. Data loaded:", data);
+        
+                // Code here waits for fetch to finish
+                return data;
+                
+                // Any code here will run after fetch is done
+            } catch (error) {
+                console.error("Fetch error:", error);
+            }
+        }
+
+        async function SetThemeButtons(){
+            const colourButtons = document.querySelectorAll(".colourButton");
+            colourButtons.forEach(button => {
+                button.addEventListener('click', () => {
+                    let colour = button.getAttribute('data-color');
+                    
+                    console.log(`Selected colour: ${colour}`);
+                    
+                    ChangeTheme(colour);
+                });
+            }); 
+        }
+
+        async function Init(){
+            themeData = await GetThemes();
+            await SetupLoginModeButton();
+            SetPasswordIssueDisplay();
+            await SetThemeButtons();
+        }
+
+        Init();
+    </script>
+
+</body>
+</html>

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>P2P Storage Server</title>
+    <title>Heimdall Storage - Server</title>
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -380,7 +380,7 @@
 
 <body>
     <section class="header">
-        <h1 class="displayText">P2P Storage Server</h1>
+        <h1 class="displayText">Heimdall Storage - Server</h1>
     </section>
 
 
@@ -496,7 +496,7 @@
 
         async function readCSV() {
             try {
-                const response = await fetch('http://127.0.0.1:5000/api/ServerCSV');
+                const response = await fetch('https://127.0.0.1:5000/api/ServerCSV');
                 
                 if (!response.ok) {
                     throw new Error('Network response was not ok');
@@ -514,7 +514,7 @@
         async function loadPreferences() {
             try {
                 console.log("1");
-                const response = await fetch('http://127.0.0.1:5000/api/Preferences');
+                const response = await fetch('https://127.0.0.1:5000/api/Preferences');
                 console.log("2")
                 if (!response.ok) throw new Error("Network response was not OK");
                 const data = await response.json();
@@ -531,7 +531,7 @@
 
         async function loadThemes() {
             try {
-                const response = await fetch('http://127.0.0.1:5000/api/Themes');
+                const response = await fetch('https://127.0.0.1:5000/api/Themes');
                 if (!response.ok) throw new Error("Network response was not OK");
                 const data = await response.json();
                 console.log("2. Data loaded:", data);
@@ -547,7 +547,7 @@
 
         async function LoadLog() {
             try {
-                const response = await fetch('http://127.0.0.1:5000/api/Log');
+                const response = await fetch('https://127.0.0.1:5000/api/Log');
                 if (!response.ok) throw new Error("Network response was not OK");
                 const data = await response.text();
                 // Code here waits for fetch to finish
@@ -561,7 +561,7 @@
 
         async function loadServerData() {
             try {
-                const response = await fetch('http://127.0.0.1:5000/api/ServerData');
+                const response = await fetch('https://127.0.0.1:5000/api/ServerData');
                 if (!response.ok) throw new Error("Network response was not OK");
                 const data = await response.json();
                 console.log("3. Data loaded:", data);
@@ -668,7 +668,7 @@
 
         async function UpdateThemePreference(newTheme){
             try {
-                const response = await fetch('http://127.0.0.1:5000/api/Post/ChangeThemePreference', {
+                const response = await fetch('https://127.0.0.1:5000/api/Post/ChangeThemePreference', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
@@ -685,7 +685,7 @@
 
         async function ShutdownServer(){
             try {
-                const response = await fetch('http://127.0.0.1:5000/api/Post/ShutdownServer', {
+                const response = await fetch('https://127.0.0.1:5000/api/Post/ShutdownServer', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
@@ -703,7 +703,7 @@
 
         async function UpdateChartType(newChartType) {
             try {
-                const response = await fetch('http://127.0.0.1:5000/api/Post/UpdateChartType', {
+                const response = await fetch('https://127.0.0.1:5000/api/Post/UpdateChartType', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
@@ -720,7 +720,7 @@
 
         async function StartupServer(){
             try {
-                const response = await fetch('http://127.0.0.1:5000/api/Post/StartServer', {
+                const response = await fetch('https://127.0.0.1:5000/api/Post/StartServer', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
@@ -738,7 +738,7 @@
 
         async function ServerStatus() {
             try {
-                const response = await fetch('http://127.0.0.1:5000/api/ServerStatus');
+                const response = await fetch('https://127.0.0.1:5000/api/ServerStatus');
                 if (!response.ok) throw new Error("Network response was not OK");
                 const data = await response.json();
                 console.log("2. Data loaded:", data);
@@ -754,7 +754,7 @@
 
         async function ClearLog(){
             try {
-                const response = await fetch('http://127.0.0.1:5000/api/Post/ClearLog', {
+                const response = await fetch('https://127.0.0.1:5000/api/Post/ClearLog', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
@@ -919,7 +919,7 @@
 
         async function SetLogLevel(logLevel) {
             try {
-                const response = await fetch('http://127.0.0.1:5000/api/Post/LogLevel', {
+                const response = await fetch('https://127.0.0.1:5000/api/Post/LogLevel', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'

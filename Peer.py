@@ -12,12 +12,16 @@ import colorlog
 import sqlite3
 import math
 from dotenv import load_dotenv
+from flask import Flask, jsonify, Response, request
+from flask_cors import CORS
+import requests
 
 waitingForFiles = True
 deviceName = datetime.now().strftime("%H:%M:%S")
 userCode = input("USER CODE : ") #!TEMP
 testPort = int(input("TARGET PORT : ")) #!TEMP
 password = input("PASSWORD : ") #!TEMP
+frontendPort = int(input("FRONTEND PORT : ")) #!TEMP
 
 #!TEMP
 if(input("SHOULD DELETE FILES? : ").strip().upper() == "Y"):
@@ -30,6 +34,7 @@ if(input("SHOULD DELETE FILES? : ").strip().upper() == "Y"):
 
 #Setting up .env
 load_dotenv(dotenv_path=".env.peer")
+sslCertificateLocation = os.getenv("SSL_CERTIFICATE_LOCATION")
 
 class Peer:
     def __init__(self, signalingServerHost='127.0.0.1', signalingServerPort=12345, name=""):
@@ -440,10 +445,102 @@ class Peer:
         except Exception as e:
             self.logger.error(f"Error {e} in DeleteFile", exc_info=True)
     
+    def GetFileList(self):
+        try:
+            conn = sqlite3.connect(f"Peer{userCode}FileDatabse.db")
+            cursor = conn.cursor()
+            cursor.execute(f"SELECT * FROM fileNameTracker")
+            rows = cursor.fetchall()
+            fileList = []
+            for row in rows:
+                fileList.append({"fileID" : row[0], "fileUserName" : row[1], "fileName" : row[2], "fileExtension" : row[3], "fileSize" : row[4]})
+            conn.close()
+            return fileList
+        except Exception as e:
+            self.logger.error(f"Error {e} in GetFileList", exc_info=True)
+
+#FLASK
+app = Flask(__name__)
+CORS(app)  # Allows cross-origin requests
+
+themesJSONLocation = os.getenv("THEME_JSON_LOCATION")
+
+@app.route('/api/Post/SendLoginRequest', methods=['POST'])
+def SendLoginRequest():
+    try:
+        data = request.json
+        peer.logger.debug(f"Received data SendLoginRequest: {data}")
+        
+        # Check if the request contains the expected keys
+        if 'username' not in data or 'password' not in data:
+            return jsonify({"error": "Invalid request"}), 400
+        
+        response = requests.post(
+            "https://localhost:5000/LoginRequest",
+            json = data,
+            verify=sslCertificateLocation + "/cert.pem"
+        )
+        
+        print(f"RESPONSE JSON {response.json()}, {type(response.json)}")
+        return jsonify({"status": response.json()["status"]})
+    
+    except Exception as e:
+        peer.logger.error(f"Error {e} in SendLoginRequest", exc_info=True)
+        return jsonify({"Unexpected error - check logs"}), 500
+
+@app.route('/api/GetFiles', methods=['GET'])
+def GetFiles():
+    try:
+        data = peer.GetFileList()
+        return jsonify(data) 
+    
+    except Exception as e:
+        peer.logger.error(f"Error {e} in GetFiles", exc_info=True)
+        return jsonify({"Unexpected error - check logs"}), 500
+
+@app.route('/api/GetThemes', methods=['GET'])
+def ReturnThemeJSON():
+    try:
+        with open(themesJSONLocation, 'r') as file:
+            data = json.load(file)
+        return jsonify(data) 
+    
+    except FileNotFoundError:
+        return jsonify({"error": "Themes.json not found"}), 404
+    
+    except json.JSONDecodeError:
+        return jsonify({"error": "Themes.json is not valid JSON"}), 500
+
+@app.route('/api/Post/CreateAccount', methods=['POST'])
+def CreateAccount():
+    try:
+        data = request.json
+        peer.logger.debug(f"Received data CreateAccount: {data}")
+        
+        # Check if the request contains the expected keys
+        if 'username' not in data or 'password' not in data:
+            return jsonify({"error": "Invalid request"}), 400
+        
+        response = requests.post(
+            "https://localhost:5000/AccountCreationRequest",
+            json = data,
+            verify=sslCertificateLocation + "/cert.pem"
+        )
+        
+        print(f"RESPONSE JSON {response.json()}, {type(response.json)}")
+        return jsonify({"status": response.json()["status"]})
+    
+    except Exception as e:
+        peer.logger.error(f"Error {e} in CreateAccount", exc_info=True)
+        return jsonify({"Unexpected error - check logs"}), 500
+
 if __name__ == '__main__':
+    
     peer = Peer(name=deviceName)
     peers = peer.connectToServer()
     threading.Thread(target = peer.WaitToReceiveChunks, daemon=True).start()
+    #Starting website
+    threading.Thread(target = app.run, kwargs={"port": 8888, "debug": False}).start()
     while(True):
         stateInput = input("(S)end, (W)ait, (D)isplay, (E)rase or (R)equest? : ")
         if(stateInput.strip().upper() == "S"):  
@@ -455,3 +552,5 @@ if __name__ == '__main__':
             peer.RequestFile(input("What is the file name you are requesting? : "))
         elif(stateInput.strip().upper() == "E"):
             peer.DeleteFile(input("What is the file name you want to delete : "))
+    
+    

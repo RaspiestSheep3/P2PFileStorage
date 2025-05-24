@@ -12,8 +12,9 @@ import colorlog
 from Debug import ResetSystem
 from flask import Flask, jsonify, Response, request
 from flask_cors import CORS
-import csv
+import csv  
 from dotenv import load_dotenv, dotenv_values
+import bcrypt
 
 #!TEMP
 if(input("SHOULD RESET FOLDERS (Y/N): ").strip().upper() == "Y"):
@@ -27,6 +28,7 @@ if(os.path.exists(f"ServerGeneral.log")):
     
 #Setting up .env
 load_dotenv(dotenv_path=".env.server")
+sslCertificateLocation = os.getenv("SSL_CERTIFICATE_LOCATION")
 
 #No exc_info in logging
 class NoStackTraceFormatter(logging.Formatter):
@@ -770,6 +772,15 @@ class SignalingServer:
         )
         ''')
         
+        #List of users - used outside the server class
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS userLogins (
+            username TEXT NOT NULL UNIQUE,
+            password BLOB NOT NULL,
+            userCode TEXT NOT NULL UNIQUE
+        )
+        ''')
+        
         
         #Making sure we can properly use lastUsedFileID
         cursor.execute("SELECT * FROM lastUsedFileID")
@@ -1086,6 +1097,7 @@ app = Flask(__name__)
 CORS(app)  # Allows cross-origin requests
 preferencesJSONLock = threading.Lock()
 serverDataJSONLock = threading.Lock()
+accountCreationLock = threading.Lock()
 
 #.env data
 frontendLogLocation = os.getenv("FRONTEND_LOG_LOCATION")
@@ -1254,10 +1266,84 @@ def StartServer():
         server.start()
     return jsonify({"message": "Data received!", "received": content})
 
+@app.route("/LoginRequest", methods=["POST"])
+def LoginRequest():
+    data = request.json
+    
+    username = data["username"]
+    password = data["password"]
+    passwordBytes = password.encode("utf-8")
+    salt = bcrypt.gensalt()
+    
+    databaseConn = sqlite3.connect("PeersP2PStorage.db")
+    cursor = databaseConn.cursor()
+    cursor.execute("SELECT * FROM userLogins WHERE username = ?", (username,))
+    row = cursor.fetchone()
+    userCode = ""
+    if(row != None):
+        databasePassword = row[1] 
+        status = bcrypt.checkpw(passwordBytes, databasePassword)
+        server.logger.debug(f"BCRPYT STATUS : {bcrypt.checkpw(passwordBytes, databasePassword)}, {passwordBytes}, {databasePassword}")
+        userCode = row[2]
+    else:
+        #Not in database
+        status = False
+    server.logger.info(f"LOGIN STATUS {status}")
+    return jsonify({"status" : str(status), "userCode" : userCode}), 200
+
+def IncrementString(s):
+    number = int(s.replace(" ", ""))
+    incremented = number + 1
+    formatted = f"{incremented:016d}"
+    return ' '.join(formatted[i:i+4] for i in range(0, 16, 4))
+
+@app.route("/AccountCreationRequest", methods=["POST"])
+def AccountCreationRequest():
+    with accountCreationLock:
+        data = request.json
+        
+        username = data["username"]
+        password = data["password"]
+        passwordBytes = password.encode("utf-8")
+        salt = bcrypt.gensalt()
+        passwordHashed = bcrypt.hashpw(passwordBytes, salt)
+        
+        databaseConn = sqlite3.connect("PeersP2PStorage.db")
+        cursor = databaseConn.cursor()
+        cursor.execute("SELECT * FROM userLogins WHERE username = ?", (username,))
+        row = cursor.fetchall()
+        
+        failureCondition = ""
+        newUserCode = ""
+        if(row != []):
+            #Username already in database
+            status = False
+            failureCondition = "Username already in use"
+        else:
+            #Finding the next ID to use
+            cursor.execute("SELECT * FROM userLogins ORDER BY userCode DESC LIMIT 1")
+            row = cursor.fetchone()
+            if(row == None):
+                #Nothing in SQL
+                newUserCode = "0000 0000 0000 0001"
+            else:
+                newUserCode = IncrementString(row[2])
+            
+            #Adding the user to the SQL
+            cursor.execute("INSERT INTO userLogins (username, password, userCode) VALUES (?, ?, ?)", (username, passwordHashed, newUserCode))
+            databaseConn.commit()
+            status = True
+        
+        databaseConn.close()
+            
+        server.logger.info(f"LOGIN STATUS {status}")
+        return jsonify({"status" : str(status), "failureCondition" : failureCondition, "userCode" : newUserCode}), 200
+
 if __name__ == '__main__':
     server = SignalingServer()
     #Starting up server
     threading.Thread(target=server.start).start()
     
     #Starting website
-    app.run(port=5000, debug=False)
+    #print(sslCertificateLocation + "/cert.pem")
+    app.run(port=5000, debug=False, ssl_context=(sslCertificateLocation +'/cert.pem', sslCertificateLocation + '/key.pem'))

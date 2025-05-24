@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>P2P Storage - Peer</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:ital,wght@0,100..700;1,100..700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/font-awesome/4.7.0/css/font-awesome.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script> 
+    <link rel="icon" type="image/png" href="P2PStorageFavicon_0.png">
+</head>
+
+<style>
+    :root {
+        --backgroundColour: #131626;
+        --mainColour:#4d4d80;
+        --accentColour: #e6a1cf;
+        
+        /*Log colours*/
+        --infoColour: #96dc92;
+        --warningColour : #f6ec60;
+        --errorColour : #cc1212;
+    }
+    *{
+        margin:0;
+        padding: 0;
+        font-family: "Roboto Mono", serif; /*font to use*/
+    }
+    
+    .displayText{
+        color : var(--mainColour);
+    }
+
+    .header {
+        margin: auto;
+        width: 100%;
+        padding: 10px;
+        min-height: 100px;
+        text-align: center;
+        /*position: absolute; */
+        top:0;
+        margin-bottom: 30px;
+    }
+    
+    .header h1{
+        margin: auto;
+        width: 70%;
+        padding: 10px;
+        text-align: center;
+        color:var(--accentColour);
+        font-size: 60px;
+        border: 3px solid var(--accentColour);
+        border-radius: 20px;
+        /*background-color: #2a173b;*/
+    }
+    
+    body {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        /*height: 100vh; */
+        width: 100%;
+        margin: 0;
+        flex-direction: column;
+        overflow-y: auto;
+        background-color: var(--backgroundColour); 
+        overflow-x: hidden; /* Prevent horizontal scroll */
+    }
+
+    #userDetails {
+        border: 3px solid var(--accentColour);
+        padding: 5px 10px;
+        border-radius: 20px;
+        margin-bottom: 10px;
+        font-size: 25px;
+    }
+
+    #filesStoredList{
+        list-style-type: none;
+        border: 3px solid var(--accentColour);
+        border-radius: 20px;
+        padding: 5px;
+        color: var(--accentColour);
+        width: 500px;
+        margin-top: 10px;
+        text-align: center;
+        overflow-y: auto;
+        scrollbar-width: none; /* Firefox */
+        -ms-overflow-style: none;  /* Internet Explorer 10+ */
+        height: 400px;
+    }
+
+    .fileListElement {
+        padding: 5px;
+        border-radius: 20px;
+        margin: 5px;
+        color: var(--mainColour);
+        font-size: 20px;
+        border: 3px solid var(--mainColour);
+        cursor: pointer;
+        transition: 0.3s ease;
+    }
+
+    .fileListElement:hover {
+        font-weight: bold;
+        color: var(--accentColour);
+        border-color: var(--accentColour);
+        font-size: 25px;
+        transition: 0.3s ease;
+    }
+
+    .underlineFade::after {
+        content: "";
+        display: block;
+        height: 2px;
+        background-color: currentColor;
+        transform: scaleX(0);
+        transform-origin: center;
+        opacity: 0;
+        transition: transform 0.3s ease, opacity 0.3s ease;
+    }
+      
+    .underlineFade:hover::after {
+    transform: scaleX(0.7);
+    opacity: 1;
+    }
+</style>
+
+<body>
+    <section class="header">
+        <h1 class="displayText">P2P Storage - Peer</h1>
+    </section>
+    <section id="userDetails">
+        <h1 class="displayText" id="userCodeDisplay">User Code : 0000 0000 0000 0001</h1>
+    </section>
+    <section id="fileRequestDetails">
+        <ul id="filesStoredList">
+            <li id="AAAA AAAB" class="displayText fileListElement underlineFade">TestFile1.txt</li>
+            <li id="AAAA AAAC" class="displayText fileListElement underlineFade">TestImage.png</li>
+            <li id="AAAA AAAD" class="displayText fileListElement underlineFade">README.md</li>
+            <li id="AAAA AAAB" class="displayText fileListElement underlineFade">TestFile1.txt</li>
+            <li id="AAAA AAAC" class="displayText fileListElement underlineFade">TestImage.png</li>
+            <li id="AAAA AAAD" class="displayText fileListElement underlineFade">README.md</li>
+            <li id="AAAA AAAB" class="displayText fileListElement underlineFade">TestFile1.txt</li>
+            <li id="AAAA AAAC" class="displayText fileListElement underlineFade">TestImage.png</li>
+            <li id="AAAA AAAD" class="displayText fileListElement underlineFade">README.md</li>
+            <li id="AAAA AAAB" class="displayText fileListElement underlineFade">TestFile1.txt</li>
+            <li id="AAAA AAAC" class="displayText fileListElement underlineFade">TestImage.png</li>
+            <li id="AAAA AAAD" class="displayText fileListElement underlineFade">README.md</li>
+            <li id="AAAA AAAB" class="displayText fileListElement underlineFade">TestFile1.txt</li>
+            <li id="AAAA AAAC" class="displayText fileListElement underlineFade">TestImage.png</li>
+            <li id="AAAA AAAD" class="displayText fileListElement underlineFade">README.md</li>
+            <li id="AAAA AAAB" class="displayText fileListElement underlineFade">TestFile1.txt</li>
+            <li id="AAAA AAAC" class="displayText fileListElement underlineFade">TestImage.png</li>
+            <li id="AAAA AAAD" class="displayText fileListElement underlineFade">README.md</li>
+        </ul>
+    </section>
+
+    <script>
+        async function GetFiles() {
+            try {
+                const response = await fetch('http://127.0.0.1:6000/api/GetFiles');
+                if (!response.ok) throw new Error("Network response was not OK");
+                const data = await response.json();
+                
+                console.log("Files fetched:", data);
+                // Code here waits for fetch to finish
+                return data;
+                
+                // Any code here will run after fetch is done
+            } catch (error) {
+                console.error("Fetch error:", error);
+            }
+        }
+
+
+        async function GenerateFileList(){
+            const fileList = document.getElementById("filesStoredList");
+            fileList.innerHTML = ""; // Clear existing list
+            const files = await GetFiles(); // Fetch files from the server
+
+            files.forEach(file => {
+                const li = document.createElement("li");
+                li.id = file.id;
+                li.className = "displayText fileListElement underlineFade";
+                li.textContent = file.name;
+                li.addEventListener("click", () => {
+                    // Handle file click
+                    console.log(`File clicked: ${file.name}`);
+                });
+                fileList.appendChild(li);
+            });
+        }
+
+        async function Init() {
+            await GenerateFileList();
+        }
+
+        Init();
+    </script>
+
+</body>
+</html>
