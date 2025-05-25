@@ -335,8 +335,9 @@
             "specialChars" : "HAS SPECIAL CHARACTERS"
         }
 
-        //Themes
+        //JSON Data
         var themeData = null;
+        var preferencesData = null;
 
         async function SetupLoginModeButton(){
             const loginButton = document.getElementById("loginButton");
@@ -497,12 +498,48 @@
                     console.log(`Selected colour: ${colour}`);
                     
                     ChangeTheme(colour);
+                    UpdateThemePreference(colour);
                 });
             }); 
         }
 
+        async function UpdateThemePreference(newTheme){
+            try {
+                const response = await fetch('http://127.0.0.1:8888/api/Post/ChangeThemePreference', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({colour : newTheme})
+                });
+    
+                let data = await response.json();
+                console.log("POST Response:", data);
+            } catch (error) {
+                console.error("Error posting data:", error);
+            }
+        }
+
+        async function GetPreferences(){
+            try {
+                let response = await fetch('http://127.0.0.1:8888/api/Preferences');
+                if (!response.ok) throw new Error("Network response was not OK");
+                let data = await response.json();;
+                // Code here waits for fetch to finish
+                return data;
+                // Any code here will run after fetch is done
+            } catch (error) {
+                console.error("Fetch error:", error);
+            }
+        }
+
         async function Init(){
+            preferencesData = await GetPreferences();
             themeData = await GetThemes();
+
+            //Setting chosen theme
+            ChangeTheme(preferencesData["Theme"])
+
             await SetupLoginModeButton();
             SetPasswordIssueDisplay();
             await SetThemeButtons();

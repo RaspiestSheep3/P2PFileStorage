@@ -33,7 +33,7 @@ def display_table_contents(table_name):
         conn.close()
 
 # List of tables to display
-tables = ["userLogins"]
+tables = ["peers"]
 
 for table in tables:
     display_table_contents(table)

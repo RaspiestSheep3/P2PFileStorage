@@ -46,6 +46,7 @@ class SignalingServer:
         self.chartDataLock = threading.Lock()
         self.timeBetweenHeartbeats = 10
         self.spacePerPeerMB = 1024
+        self.chunkSize = (1) * 1024 #Recommended to change the value in brackets - this changes the amount of KiB
         self.redundancyValue = 0
         self.connectedAddrs = []
         self.completedFileIDs = []
@@ -239,7 +240,7 @@ class SignalingServer:
                     cursor.execute('''
                     INSERT INTO peers (ipAddress, port, userCode, availableSpace)
                     VALUES (?, ?, ?, ?)
-                    ''', (peer_ip, peer_port, peerUserCode, self.spacePerPeerMB * 1024 * 1024))  #Converting into B from MB
+                    ''', (peer_ip, peer_port, peerUserCode, self.spacePerPeerMB * 1024 * 1024))  #Converting into MiB to B
                     databaseConnection.commit()
                     self.logger.info("User commited to database")
                 except sqlite3.IntegrityError as e:  # Catch IntegrityError specifically
@@ -364,7 +365,7 @@ class SignalingServer:
     def AddChunkToFile(self, fileName, chunkIndex, chunkData):
         try:
             with open(fileName, "r+b") as fileHandle:
-                offset = chunkIndex * 1024
+                offset = chunkIndex * self.chunkSize
                 fileHandle.seek(offset)
                 fileHandle.write(chunkData)
         except Exception as e:
@@ -455,7 +456,7 @@ class SignalingServer:
                 databaseConn.close()
                 
                 
-                self.CheckPeersConnected()
+                self.CheckPeersConnected(source="FILERETURNER")
                 for peer in self.peers:   
                     connectionSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                     peerIP = self.peers[peer]["ip"]
@@ -523,14 +524,18 @@ class SignalingServer:
                 response = json.loads(response)
                 if(response) and (response["type"] == "fileReturnRequestAccept"):
                     #Sending data
-                    for i in range(math.ceil(os.path.getsize(filePath) / 1024)):
-                        chunkData = fileHandle.read(1024)
+                    self.logger.debug(f"FILEPATH SIZE IN RF : {math.ceil(os.path.getsize(filePath) / self.chunkSize)}")
+                    for i in range(math.ceil(os.path.getsize(filePath) / self.chunkSize)):
+                        chunkData = fileHandle.read(self.chunkSize)
                         detailsMessage = json.dumps({"chunkIndex" : i, "chunkLength" : len(chunkData)})
+                        self.logger.debug(f"DETAILS MESSAGE IN RF {detailsMessage}")
                         connectionSocket.send(detailsMessage.encode().ljust(64, b"\0"))
                         
                         #Sending chunk
                         connectionSocket.send(chunkData)
-                        
+                    
+            #Clearing the files to return folder of that file
+            #os.remove(filePath)   #!TO FIX
                 
         except Exception as e:
             self.logger.error(f"Error {e} in ReturnFile", exc_info=True)
@@ -566,7 +571,9 @@ class SignalingServer:
             connectionSocket.send(json.dumps(chunkDetailsMessage).encode())
         
             #Receive chunk data
-            chunkData = connectionSocket.recv(1024)
+            chunkData = connectionSocket.recv(self.chunkSize)
+            
+            self.logger.debug(f"RCFU chunkData len {len(chunkData)}")
             
             databaseConn.close()
             
@@ -614,7 +621,7 @@ class SignalingServer:
             self.logger.info(f"PEERS {self.peers}")
             #Ping each peer 
             
-            self.CheckPeersConnected()
+            self.CheckPeersConnected(source="PEERHEARTBEATER")
             
             #Checking timestamp 
             today = date.today()
@@ -636,11 +643,17 @@ class SignalingServer:
         
             UpdateJSON("Peers Connected", len(self.peers), self.serverDataJSONLocation, "ServerData")
 
-    def CheckPeersConnected(self):
+    def CheckPeersConnected(self, source=None, userCodesToIgnore = []): #Source for debugging purposes
         self.runningHeartbeatCheck = True
         peersToRemove = []
+        
+        if(source != None):
+            print(f"CHECK PEERS CONNECTED SOURCE : {source}")
+        
         for peer in self.peers:
-            
+            if(self.peers[peer]["userCode"] in userCodesToIgnore):
+                continue
+        
             connectionSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             peerIP = self.peers[peer]["ip"]
             peerPort = self.peers[peer]["port"]
@@ -653,7 +666,7 @@ class SignalingServer:
             try:
                 self.logger.debug(f"IP {peerIP} PORT {peerPort}")
                 connectionSocket.connect((peerIP,peerPort)) 
-                self.logger.debug("CONNECTION SUCCEEDED")
+                self.logger.debug(f"CONNECTION SUCCEEDED FOR PEER {peer}, {type(peer)}, {self.peers}, {self.peers[peer]}")
                 #connectionSocket.setz(10)
                 
                 #Sending each peer a ping to see if they are still contactable
@@ -846,7 +859,7 @@ class SignalingServer:
         targetUsers = []
         
         #Make sure we dont attempt to send to someone whos not on
-        self.CheckPeersConnected()
+        self.CheckPeersConnected(source="SENDCHUNKTOPEER", userCodesToIgnore=[userCode])
         
         for i in range(1 + self.redundancyValue):
             self.logger.debug("TESTING 2")
@@ -869,7 +882,10 @@ class SignalingServer:
                         break
             
             if chosenPeer != None:
-                targetUsers.append(chosenPeer)       
+                targetUsers.append(chosenPeer)   
+                #Decreasing target user's storage space
+                cursor.execute("UPDATE peers SET availableSpace = ? WHERE userCode = ?", (chosenPeer[3] - chunkSize, chosenPeer[2]))    
+                connection.commit()
             else:
                 self.logger.debug("No space")
 
@@ -945,7 +961,7 @@ class SignalingServer:
             self.logger.debug(f"FILENAMECOPY {fileNameCopy}")
             userCode = (fileNameCopy[0].strip("userCode"))
             
-            totalChunkCount = math.ceil(os.path.getsize(filePath) / 1024)
+            totalChunkCount = math.ceil(os.path.getsize(filePath) / self.chunkSize)
             
             self.logger.debug("TEST 1")
             
@@ -977,7 +993,7 @@ class SignalingServer:
             
             with open(filePath, "rb") as fileHandle:
                 for chunkCount in range(totalChunkCount):
-                    chunk = fileHandle.read(1024)
+                    chunk = fileHandle.read(self.chunkSize) 
                     
                     chunkDetails = self.SendChunkToPeer(userCode,chunk,chunkCount,len(chunk),fileID)
                     self.logger.debug(f"CHUNK DETAILS : {chunkDetails}")
@@ -1023,8 +1039,8 @@ class SignalingServer:
             for i in range(totalChunkCount):
                 self.logger.info(f"TOTAL CHUNK COUNT {totalChunkCount}")
                 chunkIndex = int(pConnection.recv(8).decode())
-                chunk = pConnection.recv(1024)
-                if(len(chunk) == 1024):
+                chunk = pConnection.recv(self.chunkSize)
+                if(len(chunk) == self.chunkSize):
                     #Everything has gone well
                     self.logger.debug(f"LEN {len(chunk)}") 
                     #Unpadding

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>P2P Storage - Peer</title>
+    <title>Heimdall Storage</title>
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -124,45 +124,172 @@
     }
       
     .underlineFade:hover::after {
-    transform: scaleX(0.7);
-    opacity: 1;
+        transform: scaleX(0.7);
+        opacity: 1;
     }
+
+    #dropZone {
+        border: 3px solid var(--accentColour);
+        border-radius: 20px;
+        width: 400px;
+        height: 200px;
+        margin-top: 10px;
+        background-color: var(--backgroundColour);
+        color: var(--mainColour);
+        font-weight: bold;
+        font-size: 25px;
+        transition: 0.3s ease;
+        cursor:pointer;
+        display: flex;
+        justify-content: center; 
+        align-items: center;     
+        text-align: center; 
+        
+        
+    }
+
+    #dropZone:hover{
+        color: var(--accentColour);
+    }
+
+    .underlineFade::after {
+        content: "";
+        display: block;
+        height: 2px;
+        background-color: currentColor;
+        transform: scaleX(0);
+        transform-origin: center;
+        opacity: 0;
+        transition: transform 0.3s ease, opacity 0.3s ease;
+    }
+      
+    .underlineFade:hover::after {
+        transform: scaleX(0.7);
+        opacity: 1;
+    }
+
+    #uploadedFilesList {
+        list-style-type: none;
+        border: 3px solid var(--accentColour);
+        border-radius: 20px;
+        margin-top:10px;
+        padding: 5px;
+        width:400px;
+        height:190px; /*Must be 10px less than the drop zone for some reason*/
+        overflow-y: auto;
+        scrollbar-width: none; /* Firefox */
+        -ms-overflow-style: none;  /* Internet Explorer 10+ */
+    }
+
+    .uploadedFilesListElement {
+        border: 2px solid var(--accentColour);
+        border-radius: 20px;
+        text-align: center;
+        margin: 5px;
+        padding: 2px;
+        cursor: pointer;
+        font-weight: bold;
+        transition: 0.3s ease;
+    }
+
+    #fileUpload {
+        display: flex;
+        flex-direction: row;
+        gap: 30px;
+    }
+
+    .uploadedFilesListElement:hover{
+        font-size: 20px;
+    }
+
+    #fileUploadButton {
+        text-align: center;
+        border: 3px solid var(--accentColour);
+        background-color: var(--backgroundColour);
+        border-radius: 20px;
+        color: var(--accentColour);
+        padding: 5px;
+        display: block;
+        margin: 10px auto;
+        width: 250px;
+        font-size: 20px;
+        cursor: pointer;
+        transition: 0.3s ease;
+    }
+
+    #fileUploadButton:hover{
+        font-size: 25px;
+        font-weight: bold;
+    }
+
+    #fileOverview {
+        border: 3px solid var(--accentColour);
+        margin-top: 10px;
+        border-radius: 20px;
+        padding: 5px;
+        text-align: center;
+    }
+
+    .displayButton {
+        border-radius: 20px;
+        margin: 5px 20px;
+        width: 90px;
+        cursor : pointer;
+        transition: 0.2s;
+        padding: 5px 5px;
+        background-color: var(--backgroundColour); 
+    }
+
+    .fileOverviewButton{
+        border: 2px solid var(--accentColour);
+        width: 200px;
+        color:var(--accentColour);
+        transition: 0.3s ease;
+    }
+
+    .fileOverviewButton:hover{
+        font-weight: bold;
+        font-size: 20px;
+    }
+
 </style>
 
 <body>
     <section class="header">
-        <h1 class="displayText">P2P Storage - Peer</h1>
+        <h1 class="displayText">Heimdall Storage</h1>
     </section>
     <section id="userDetails">
         <h1 class="displayText" id="userCodeDisplay">User Code : 0000 0000 0000 0001</h1>
     </section>
     <section id="fileRequestDetails">
         <ul id="filesStoredList">
-            <li id="AAAA AAAB" class="displayText fileListElement underlineFade">TestFile1.txt</li>
-            <li id="AAAA AAAC" class="displayText fileListElement underlineFade">TestImage.png</li>
-            <li id="AAAA AAAD" class="displayText fileListElement underlineFade">README.md</li>
-            <li id="AAAA AAAB" class="displayText fileListElement underlineFade">TestFile1.txt</li>
-            <li id="AAAA AAAC" class="displayText fileListElement underlineFade">TestImage.png</li>
-            <li id="AAAA AAAD" class="displayText fileListElement underlineFade">README.md</li>
-            <li id="AAAA AAAB" class="displayText fileListElement underlineFade">TestFile1.txt</li>
-            <li id="AAAA AAAC" class="displayText fileListElement underlineFade">TestImage.png</li>
-            <li id="AAAA AAAD" class="displayText fileListElement underlineFade">README.md</li>
-            <li id="AAAA AAAB" class="displayText fileListElement underlineFade">TestFile1.txt</li>
-            <li id="AAAA AAAC" class="displayText fileListElement underlineFade">TestImage.png</li>
-            <li id="AAAA AAAD" class="displayText fileListElement underlineFade">README.md</li>
-            <li id="AAAA AAAB" class="displayText fileListElement underlineFade">TestFile1.txt</li>
-            <li id="AAAA AAAC" class="displayText fileListElement underlineFade">TestImage.png</li>
-            <li id="AAAA AAAD" class="displayText fileListElement underlineFade">README.md</li>
-            <li id="AAAA AAAB" class="displayText fileListElement underlineFade">TestFile1.txt</li>
-            <li id="AAAA AAAC" class="displayText fileListElement underlineFade">TestImage.png</li>
-            <li id="AAAA AAAD" class="displayText fileListElement underlineFade">README.md</li>
         </ul>
+        <div id="fileOverview">
+            <h1 class="displayText" id="fileOverviewFileName">A</h1>
+            <div id="fileOverviewButtons">
+                <button class="displayButton displayText fileOverviewButton underlineFade" id="requestFileButton">Request File</button>
+                <button class="displayButton displayText fileOverviewButton underlineFade" id="deleteFileButton">Delete File</button>
+            </div>
+        </div>
+    </section>
+    <section>
+        <div id="fileUpload">
+            <div id="dropZone" ondrop="FileUploadDropHandler(event);" ondragover="FileUploadDragOverHandler(event);">
+                <p class="underlineFade">Drag Files Here For Upload</p>
+            </div>
+            <ul id="uploadedFilesList">
+            </ul>
+        </div>
+        <button class="displayText underlineFade" id="fileUploadButton">Upload Files</button>
     </section>
 
     <script>
+        //File Upload
+        var fileUploadList = []
+
         async function GetFiles() {
             try {
-                const response = await fetch('http://127.0.0.1:6000/api/GetFiles');
+                const response = await fetch('http://127.0.0.1:8888/api/GetFiles');
                 if (!response.ok) throw new Error("Network response was not OK");
                 const data = await response.json();
                 
@@ -181,22 +308,162 @@
             const fileList = document.getElementById("filesStoredList");
             fileList.innerHTML = ""; // Clear existing list
             const files = await GetFiles(); // Fetch files from the server
-
+            const fileOverviewFileName = document.getElementById("fileOverviewFileName");
             files.forEach(file => {
                 const li = document.createElement("li");
-                li.id = file.id;
+                li.id = file.fileID;
                 li.className = "displayText fileListElement underlineFade";
-                li.textContent = file.name;
+                li.textContent = (file.fileName) + file.fileExtension;
                 li.addEventListener("click", () => {
                     // Handle file click
-                    console.log(`File clicked: ${file.name}`);
+                    console.log(`File clicked: ${li.id}`);
+                    fileOverviewFileName.textContent = li.textContent;
                 });
                 fileList.appendChild(li);
             });
         }
 
+        function SetUploadFilesButton(){
+            let uploadButton = document.getElementById("fileUploadButton")
+            uploadButton.addEventListener("click", () => {
+                UploadFiles();
+            });
+        }
+
         async function Init() {
             await GenerateFileList();
+            SetUploadFilesButton();
+            GenerateFileOverviewButtons();
+        }
+
+        function FileUploadDragOverHandler(ev){
+            console.log("File(s) in drop zone");
+            // Prevent default behavior (Prevent file from being opened)
+            ev.preventDefault();
+        }
+
+        function GenerateFileUploadList(){
+            let fileUploadListElement = document.getElementById("uploadedFilesList");
+            fileUploadListElement.innerHTML = "";
+            console.log(fileUploadList.length);
+            fileUploadList.forEach(item => {
+                let li = document.createElement("li");
+                li.id = item.name;
+                li.className = "displayText uploadedFilesListElement underlineFade";
+                li.textContent = item.name;
+                li.addEventListener("click", () => {
+                    //Deleting from system
+                    fileUploadList = fileUploadList.filter(file => file.name !== li.id);
+                    GenerateFileUploadList();
+                });
+                fileUploadListElement.appendChild(li);
+                console.log(item.name);
+            });
+        }
+
+        function FileUploadDropHandler(ev){
+            console.log("File(s) dropped");
+            ev.preventDefault();
+
+            if (ev.dataTransfer.items) {
+                //Checks if we have items
+                [...ev.dataTransfer.items].forEach((item, i) => {
+                // If dropped items aren't files, reject them
+                if (item.kind === "file") {
+                    const file = item.getAsFile(); //Converting into a file object
+                    console.log(`… file[${i}].name = ${file.name}, size = ${file.size} bytes`);
+                    fileUploadList.push(file);
+                    GenerateFileUploadList();
+                }
+                else console.log("NOT A FILE")
+                });
+            } 
+            else {
+                // For older browsers
+                [...ev.dataTransfer.files].forEach((file, i) => {
+                    console.log(`… file[${i}].name = ${file.name}`);
+                    fileUploadList.push(file);
+                    GenerateFileUploadList();
+                });
+            }
+        }
+
+        async function UploadFile(file){
+            try {
+                let formData = new FormData();
+                formData.append("file", file)
+                const response = await fetch('http://127.0.0.1:8888/api/Post/UploadFile', {
+                    method: 'POST',
+                    body: formData
+                });
+    
+                let data = await response.json();
+                console.log(`POST Response in UploadFile for ${file.name}: ${data["status"]}`);
+                
+                fileUploadList = fileUploadList.filter(file2 => file2.name !== file.name);
+            } catch (error) {
+                console.error("Error posting data:", error);
+            }
+        }
+
+        async function DeleteFile(filename){
+            try {
+                const response = await fetch('http://127.0.0.1:8888/api/Post/DeleteFile', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({"filename" : filename})
+                });
+
+                const data = await response.json();
+                console.log("POST Response in DELETEFILE:", data);
+
+                GenerateFileList();
+
+            } catch (error) {
+                console.error("Error posting data:", error);
+            }
+        }
+        
+        async function RequestFile(filename){
+            try {
+                const response = await fetch('http://127.0.0.1:8888/api/Post/RequestFile', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({"filename" : filename})
+                });
+
+                const data = await response.json();
+                console.log("POST Response in REQUESTFILE:", data);
+
+            } catch (error) {
+                console.error("Error posting data:", error);
+            }
+        }   
+
+        function GenerateFileOverviewButtons(){
+            //Delete button
+            const deleteFileButton = document.getElementById("deleteFileButton");
+            deleteFileButton.addEventListener("click", () => {
+                console.log("DELETING");
+                DeleteFile(fileOverviewFileName.textContent);
+            });
+
+            const requestFileButton = document.getElementById("requestFileButton");
+            requestFileButton.addEventListener("click", () => {
+                console.log("REQUESTING");
+                RequestFile(fileOverviewFileName.textContent);
+            });
+        }
+
+        async function UploadFiles() {
+            const uploadPromises = fileUploadList.map(file => UploadFile(file));
+            await Promise.all(uploadPromises);
+            GenerateFileList();
+            GenerateFileUploadList();
         }
 
         Init();

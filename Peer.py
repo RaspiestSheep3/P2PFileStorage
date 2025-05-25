@@ -181,7 +181,7 @@ class Peer:
                 #Making a temporary copy with the encrypted data
                 
                 nonceList = []
-                ciphertextFilePath = (filePath.replace(fileExtension, "")) + "Cipher" + fileExtension
+                ciphertextFilePath = (filePath.replace(fileExtension, "")) + "Cipher.bin"
                 
                 with open(filePath, "rb") as fileHandle:
                     with open(ciphertextFilePath, "wb") as fileHandleWrite:
@@ -191,7 +191,6 @@ class Peer:
                             ciphertext = self.aesgcm.encrypt(nonce, chunk, None)
                             fileHandleWrite.write(ciphertext)
                             nonceList.append(nonce)
-                    print(f"NONCELIST {nonceList}")
 
                 totalChunkCount = os.path.getsize(ciphertextFilePath) // 1024
                 if(os.path.getsize(ciphertextFilePath) % 1024 != 0):
@@ -218,9 +217,6 @@ class Peer:
                             serverSocket.send(chunk)  # Send data chunk
                             self.logger.info(f"Sent chunk {chunkIndex + 1}/{totalChunkCount} ({1024} bytes)")
 
-                #Killing the cipher file
-                os.remove(ciphertextFilePath)
-
                 #Receive fileID
                 fileIDMessage = json.loads(serverSocket.recv(64).decode().rstrip("\0"))
                 self.logger.debug(f"FILE ID MESSAGE : {fileIDMessage}")
@@ -228,11 +224,14 @@ class Peer:
                 databaseConnection = sqlite3.connect(f'Peer{userCode}FileDatabse.db')
                 cursor = databaseConnection.cursor()
                 
-                cursor.execute("INSERT INTO fileNameTracker (fileID, fileUserName, fileName, fileExtension, fileSize, nonceList) VALUES (?, ?, ?, ?, ?, ?)", (fileIDMessage["fileID"], fileNameUser, fileName, fileExtension, os.path.getsize(filePath), b",".join(nonceList)))
+                cursor.execute("INSERT INTO fileNameTracker (fileID, fileUserName, fileName, fileExtension, fileSize, nonceList) VALUES (?, ?, ?, ?, ?, ?)", (fileIDMessage["fileID"], fileNameUser, fileName, fileExtension, os.path.getsize(ciphertextFilePath), b",".join(nonceList)))
                 databaseConnection.commit()
                 databaseConnection.close()
                 
                 self.logger.debug("UPDATED DATABASE")
+                
+                #Killing the cipher file
+                os.remove(ciphertextFilePath)
                 
             serverSocket.close()
         except Exception as e:
@@ -249,11 +248,10 @@ class Peer:
             fileOutputName = row[2] + row[3]
             fileOutputPath = os.getenv("FILE_OUTPUT_PATH")
             
-            #!LABEL
-            
-            with open(f"{fileOutputPath}/{fileOutputNameCipher}", "w+b") as fileHandle:
+            with open(f"{fileOutputPath}/{fileOutputNameCipher}", "wb") as fileHandle:
                 fileHandle.truncate(row[4])
                 #Receiving data
+                self.logger.debug(f"ITERATION AMOUNT IN RRF : {math.ceil(row[4] / 1024)}, {row[4]}")
                 for i in range(math.ceil(row[4] / 1024)):
                     details = connectionSocket.recv(64).strip(b"\0")
                     detailsDecoded = json.loads(details.decode().strip())
@@ -268,7 +266,7 @@ class Peer:
             with open(f"{fileOutputPath}/{fileOutputNameCipher}", "rb") as fileHandle:
                 with open(f"{fileOutputPath}/{fileOutputName}", "wb") as fileHandleWrite:
                     for chunkIndex in range(math.ceil(os.path.getsize(f"{fileOutputPath}/{fileOutputNameCipher}") / (1024 * 128))):
-                        chunk = fileHandle.read(1024 * 128)
+                        chunk = fileHandle.read(1024 * 128 + 16) #+16 for some extra data for AES
                         nonce = row[5].split(b",")[chunkIndex]
                         decryptedChunk = self.aesgcm.decrypt(nonce, chunk, None)
                         fileHandleWrite.write(decryptedChunk)  
@@ -382,7 +380,7 @@ class Peer:
             chunk = peerSocket.recv(1024)
             
             #Saving chunk data
-            folderWritePath = folderStoragePath = os.getenv("FILE_STORAGE_PATH")
+            folderWritePath = os.getenv("FILE_STORAGE_PATH")
             
             #!REMOVE THE USERCODE PHRASE - FOR TESTING
             with open(f'{folderWritePath}/{userCode}--CODE-{chunkData["userCode"]}--INDEX-{chunkData["chunkIndex"]}--FILEID-{chunkData["fileID"]}.bin', "wb") as fileHandle:
@@ -464,6 +462,10 @@ app = Flask(__name__)
 CORS(app)  # Allows cross-origin requests
 
 themesJSONLocation = os.getenv("THEME_JSON_LOCATION")
+loginPreferencesJSONLocation = os.getenv("LOGIN_PREFERENCE_JSON_LOCATION")
+uploadFileBufferFolder = os.getenv("UPLOAD_BUFFER_LOCATION")
+
+loginPreferencesJSONLock = threading.Lock()
 
 @app.route('/api/Post/SendLoginRequest', methods=['POST'])
 def SendLoginRequest():
@@ -534,17 +536,97 @@ def CreateAccount():
         peer.logger.error(f"Error {e} in CreateAccount", exc_info=True)
         return jsonify({"Unexpected error - check logs"}), 500
 
+@app.route('/api/Post/ChangeThemePreference', methods=['POST'])
+def ChangeThemePreferences():
+    content = request.json  # Get JSON from the request body
+    print("Received:", content)
+    #update logging software
+    newColour = content["colour"]
+    
+    #Updating jsons
+    UpdateJSON("Theme", newColour, loginPreferencesJSONLocation, "Preference")
+    return jsonify({"message": "Data received!", "received": content})
+
+def UpdateJSON(key, value, path, lockType):
+    lockTypeDict = {
+        "Preference" : loginPreferencesJSONLock,
+    }
+    lockType = lockTypeDict[lockType]
+    with lockType:
+        with open(path, "r") as fileHandle:
+            data = json.load(fileHandle)
+            data[key] = value
+        with open(path, "w") as fileHandle:
+            json.dump(data, fileHandle, indent=4)
+
+@app.route('/api/Preferences', methods=['GET'])
+def ReturnPreferences():
+    try:
+        with open(loginPreferencesJSONLocation, 'r') as file:
+            data = json.load(file)
+        return jsonify(data) 
+    
+    except FileNotFoundError:
+        return jsonify({"error": "Preferences.json not found"}), 404
+    
+    except json.JSONDecodeError:
+        return jsonify({"error": "Preferences.json is not valid JSON"}), 500
+
+@app.route('/api/Post/UploadFile', methods=['POST'])
+def Upload():
+    uploadedFile = request.files['file']  # 'file' must match the FormData key
+
+    # You can read the content
+    content = uploadedFile.read()
+    filename = uploadedFile.filename
+    basename, _ = os.path.splitext(uploadedFile.filename)
+    
+    print(f"RECEIVED A FILE : {filename}")
+    
+    #Creating a buffer file
+    with open(uploadFileBufferFolder + filename, "wb") as fileHandle:
+        fileHandle.write(content)
+    
+    peer.SendFile(uploadFileBufferFolder+filename, basename)
+    
+    #Deleting the buffer file
+    os.remove(uploadFileBufferFolder + filename)
+
+    return jsonify({"status" : "received"}), 500
+
+@app.route('/api/Post/DeleteFile', methods=['POST'])
+def DeleteFile():
+    content = request.json  # Get JSON from the request body
+    print("DELETING:", content)
+
+    filename, _ = os.path.splitext(content["filename"])
+    
+    peer.DeleteFile(filename)
+    
+    return jsonify({"status" : "success"})
+
+@app.route('/api/Post/RequestFile', methods=['POST'])
+def RequestFile():
+    content = request.json  # Get JSON from the request body
+    print("REQUESTING:", content)
+
+    filename, _ = os.path.splitext(content["filename"])
+    
+    peer.RequestFile(filename)
+    
+    return jsonify({"status" : "success"})
+
 if __name__ == '__main__':
     
     peer = Peer(name=deviceName)
     peers = peer.connectToServer()
     threading.Thread(target = peer.WaitToReceiveChunks, daemon=True).start()
     #Starting website
-    threading.Thread(target = app.run, kwargs={"port": 8888, "debug": False}).start()
+    threading.Thread(target = app.run, kwargs={"port": int(frontendPort), "debug": False}).start()
     while(True):
         stateInput = input("(S)end, (W)ait, (D)isplay, (E)rase or (R)equest? : ")
         if(stateInput.strip().upper() == "S"):  
-            peer.SendFile("TestFile.txt", "TestFile1")
+            peer.SendFile("TestFile.txt", "TestFile")
             print("File Sent!")
         elif(stateInput.strip().upper() == "D"):
             peer.DisplayFiles()
