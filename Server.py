@@ -36,6 +36,13 @@ class NoStackTraceFormatter(logging.Formatter):
         record.exc_info = None  # removes stack trace
         return super().format(record)
 
+#Setting logging level right
+loggingLevelDict = {
+    "Info" : logging.INFO,
+    "Warning" : logging.WARNING,
+    "Error" : logging.ERROR
+}
+
 # Signaling server class
 class SignalingServer:
     def __init__(self, host='0.0.0.0', port=12345):
@@ -46,7 +53,7 @@ class SignalingServer:
         self.chartDataLock = threading.Lock()
         self.timeBetweenHeartbeats = 10
         self.spacePerPeerMB = 1024
-        self.chunkSize = (1) * 1024 #Recommended to change the value in brackets - this changes the amount of KiB
+        self.chunkSize = (64) * 1024 #Recommended to change the value in brackets - this changes the amount of KiB
         self.redundancyValue = 0
         self.connectedAddrs = []
         self.completedFileIDs = []
@@ -62,6 +69,7 @@ class SignalingServer:
         self.serverActive = False
         self.lastHourReading = None
         self.fileIDLock = threading.Lock()
+        self.fileDeletionLock = threading.Lock()
         
         #.env
         self.filesToReturnLocation = os.getenv("SERVER_FILES_TO_RETURN_FOLDER_LOCATION")
@@ -151,22 +159,24 @@ class SignalingServer:
                 lineMonth = int(lineDate[1])
                 lineYear = int(lineDate[2])
                 
-                csvDatetimes.append([datetime(hour=lineHour, day=lineDay,month=lineMonth,year=lineYear), line.split(",")[1]])
+                #csvDatetimes.append([datetime(hour=lineHour, day=lineDay,month=lineMonth,year=lineYear), line.split(",")[1]])
 
             #print(f"CSV : {csvDatetimes}")
             
             csvDatetimes.reverse()
             newLines = []
                 
-            lastTime = datetime.now()
+            lastTime = datetime.now().replace(minute=0, second=0, microsecond=0)
             i = 0
             while(len(newLines) < 720):
                 if(i<len(csvDatetimes)) and (lastTime - csvDatetimes[i][0]) <= timedelta(hours=1):
                     #Correct setup
+                    
                     newLines.append(csvDatetimes[i])
                     lastTime = csvDatetimes[i][0]
                     i+= 1
                 else:
+                    self.logger.debug(f"FILL OLD VALUES TIMEDELTA : {lastTime}, {timedelta(minutes=30) <= timedelta(hours=1)}")
                     newLines.append([lastTime,"0"])
                     lastTime -= timedelta(hours=1)
             
@@ -229,6 +239,10 @@ class SignalingServer:
                 with self.lock:
                     self.peers[f"{peer_ip}:{peer_port}"] = peer_info
 
+                #Sending the server info
+                serverInfoMessage = {"chunkSize" : self.chunkSize}
+                peer_socket.send(json.dumps(serverInfoMessage).encode().ljust(128, b"\0"))
+
                 # Send the updated peers list to the connecting peer
                 with self.lock:
                     peer_socket.send(json.dumps(self.peers).encode())
@@ -262,6 +276,27 @@ class SignalingServer:
                 self.logger.debug("TRYING TO DELETE FILES")
                 databaseConn = sqlite3.connect("PeersP2PStorage.db")
                 cursor = databaseConn.cursor()
+                
+                #Checking if file is within our stored files
+                with self.fileDeletionLock:
+                    self.logger.debug(f"COMPLETEDFILEIDS : {self.completedFileIDs}")
+                    for fileID in self.filesToDelete:
+                        if(fileID in self.completedFileIDs):
+                            #File is within our buffer of files to share
+                            dirContents = os.listdir(self.filesToSendLocation)
+                            for dirContent in dirContents:
+                                if(fileID in dirContent):
+                                    os.remove(self.filesToSendLocation + "/" + dirContent)
+                                    break
+                            self.completedFileIDs.remove(fileID)
+                            self.logger.debug(f"DELETING {fileID} FROM FILESTOSEND")
+                            
+                            #Removing from everything else
+                            self.filesToDelete.remove(fileID)
+                            cursor.execute("DELETE FROM files WHERE fileID = ?", (fileID,))
+                            databaseConn.commit()
+                        
+                
                 placeHolders = ", ".join(["?"] * len(self.filesToDelete))
                 cursor.execute(f"SELECT * FROM files WHERE fileID IN ({placeHolders})", tuple(self.filesToDelete))
                 rows = cursor.fetchall()
@@ -731,6 +766,13 @@ class SignalingServer:
         self.serverActive = True
         self.serverSocket.bind((self.host, self.port))
         self.serverSocket.listen(5)
+        
+        with open(preferencesJSONLocation, 'r') as file:
+            data = json.load(file)
+            self.mainLoggingLevel = loggingLevelDict[data["LogLevel"]]
+            server.frontendLogHandler.setLevel(server.mainLoggingLevel)
+            self.logger.debug(f"LOGGING LEVEL ON FRONTEND : {self.mainLoggingLevel}")
+        
         self.logger.info(f"Signaling server running on {self.host}:{self.port}")
         
         #Setting up SQLite database to store files
@@ -925,29 +967,30 @@ class SignalingServer:
         try:
             while not self.shuttingDown: 
                 
-                #Loop through all files
-                self.logger.debug("LOOPING THROUGH FILES TO DISTRIBUTE")
-                counter = 0
-                filesList = os.listdir(folderFilePath)
-                while(counter < len(filesList)):
-                    fileTarget = filesList[counter].split("--")
-                    self.logger.debug(f"FILE ID = {fileTarget[2].strip('fileID')} | {self.completedFileIDs}")
-                    
-                    fileTarget[2] = fileTarget[2].strip("fileID").strip(".bin")
-                    if(fileTarget[2] in self.completedFileIDs):
-                        self.logger.debug(f"NOW ATTEMPTING TO DISTRIBUTE {fileTarget} | {fileTarget[2]}")
+                with self.fileDeletionLock:
+                    #Loop through all files
+                    self.logger.debug("LOOPING THROUGH FILES TO DISTRIBUTE")
+                    counter = 0
+                    filesList = os.listdir(folderFilePath)
+                    while(counter < len(filesList)):
+                        fileTarget = filesList[counter].split("--")
+                        self.logger.debug(f"FILE ID = {fileTarget[2].strip('fileID')} | {self.completedFileIDs}")
                         
-                        if(self.DistributeFileToPeers(filesList[counter], (folderFilePath + "\\" + filesList[counter]))):
-                            os.remove(folderFilePath + "\\" + filesList[counter])
-                            self.completedFileIDs.remove(fileTarget[2])
+                        fileTarget[2] = fileTarget[2].strip("fileID").strip(".bin")
+                        if(fileTarget[2] in self.completedFileIDs):
+                            self.logger.debug(f"NOW ATTEMPTING TO DISTRIBUTE {fileTarget} | {fileTarget[2]}")
+                            
+                            if(self.DistributeFileToPeers(filesList[counter], (folderFilePath + "\\" + filesList[counter]))):
+                                os.remove(folderFilePath + "\\" + filesList[counter])
+                                self.completedFileIDs.remove(fileTarget[2])
+                            else:
+                                counter += 1
+                                self.logger.warning(f"ISSUE DISTRIBUTING {filesList}")
                         else:
                             counter += 1
-                            self.logger.warning(f"ISSUE DISTRIBUTING {filesList}")
-                    else:
-                        counter += 1
-                        self.logger.warning(f"CANNOT DISTRIBUTE {filesList} - NOT READY")
-                
-                UpdateJSON("Files In Storage", len(os.listdir(folderFilePath)), self.serverDataJSONLocation, "ServerData")
+                            self.logger.warning(f"CANNOT DISTRIBUTE {filesList} - NOT READY")
+                    
+                    UpdateJSON("Files In Storage", len(os.listdir(folderFilePath)), self.serverDataJSONLocation, "ServerData")
                 
                 #Waiting for a bit to avoid spam 
                 time.sleep(10)
@@ -1218,13 +1261,7 @@ def UpdateLogLevel():
     #update logging software
     newLogLevel = content["logLevel"]
     
-    logLevelDict = {
-        "Info" : logging.INFO,
-        "Warning" : logging.WARNING,
-        "Error" : logging.ERROR
-    }
-    
-    server.mainLoggingLevel = logLevelDict[newLogLevel]
+    server.mainLoggingLevel = loggingLevelDict[newLogLevel]
     server.frontendLogHandler.setLevel(server.mainLoggingLevel)
     
     #Updating jsons

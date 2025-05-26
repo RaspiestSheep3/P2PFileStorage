@@ -42,6 +42,7 @@ class Peer:
         self.signalingServerPort = signalingServerPort
         self.name = name
         self.peerSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.chunkSize = None
 
         #*LOGGING
         # Create a colored formatter for console output
@@ -85,17 +86,9 @@ class Peer:
         self.logger.debug(f"TEST PORT : {testPort}")
         
         #Setting up .env and json 
-        self.peerJSONLocation = os.getenv("PEER_JSON_LOCATION").replace("___", userCode)
         self.encryptionIterations = int(os.getenv("ENCRYPTION_ITERATIONS"))
         
-        if(not os.path.isfile(self.peerJSONLocation)):
-            with open(self.peerJSONLocation, "w") as fileHandle:
-                fileHandle.write('{\n"salt" : "' + userCode + '"\n}')
-        
-        #Setting up encryption 
-        with open(self.peerJSONLocation, "r") as fileHandle:
-            data = json.load(fileHandle)
-            self.encryptionSalt = data["salt"].encode("utf-8")
+        self.encryptionSalt = userCode.encode("utf-8")
         self.kdf = PBKDF2HMAC(
             algorithm=hashes.SHA256(),
             length=32,                      # 16 bytes = AES-128, use 32 for AES-256
@@ -147,6 +140,10 @@ class Peer:
             self.logger.info(f"Sending peer info: {myInfo}")
             self.peerSocket.send(json.dumps(myInfo).encode())
 
+            serverInfo = json.loads(self.peerSocket.recv(128).rstrip(b"\0").decode())
+            self.logger.debug(f"serverInfo : {serverInfo}")
+            self.chunkSize = serverInfo["chunkSize"]
+            
             # Receive the list of known peers
             peers = self.peerSocket.recv(1024).decode()
             self.logger.debug(f"Raw received peer list (string): {peers}")  # Debugging step
@@ -192,30 +189,30 @@ class Peer:
                             fileHandleWrite.write(ciphertext)
                             nonceList.append(nonce)
 
-                totalChunkCount = os.path.getsize(ciphertextFilePath) // 1024
-                if(os.path.getsize(ciphertextFilePath) % 1024 != 0):
+                totalChunkCount = os.path.getsize(ciphertextFilePath) // self.chunkSize
+                if(os.path.getsize(ciphertextFilePath) % self.chunkSize != 0):
                     totalChunkCount += 1
                 
                 serverSocket.send(str(totalChunkCount).zfill(8).encode())      
 
                 with open(ciphertextFilePath,"rb") as fileHandle:
                     for chunkIndex in range(totalChunkCount):
-                            chunk = fileHandle.read(1024)
+                            chunk = fileHandle.read(self.chunkSize)
                             
                             #Padding
-                            if(len(chunk) < 1024):
+                            if(len(chunk) < self.chunkSize):
                                 padder = padding.PKCS7(128).padder()
                                 chunk = padder.update(chunk)  # Apply the padding
                                 chunk += padder.finalize()  # Finalize padding to make the chunk a multiple of 128 bytes
-                                while len(chunk) < 1024:
-                                    chunk += b"\0" * (1024 - len(chunk))  # This is just to get to 1024 bytes
+                                while len(chunk) < self.chunkSize:
+                                    chunk += b"\0" * (self.chunkSize - len(chunk))  # This is just to get to 1024 bytes
                             
                             chunkedData.append(chunk)
                             
                             # Send chunk number
                             serverSocket.send(str(chunkIndex).zfill(8).encode())  # Send chunk number
                             serverSocket.send(chunk)  # Send data chunk
-                            self.logger.info(f"Sent chunk {chunkIndex + 1}/{totalChunkCount} ({1024} bytes)")
+                            self.logger.info(f"Sent chunk {chunkIndex + 1}/{totalChunkCount} ({self.chunkSize} bytes)")
 
                 #Receive fileID
                 fileIDMessage = json.loads(serverSocket.recv(64).decode().rstrip("\0"))
@@ -251,15 +248,15 @@ class Peer:
             with open(f"{fileOutputPath}/{fileOutputNameCipher}", "wb") as fileHandle:
                 fileHandle.truncate(row[4])
                 #Receiving data
-                self.logger.debug(f"ITERATION AMOUNT IN RRF : {math.ceil(row[4] / 1024)}, {row[4]}")
-                for i in range(math.ceil(row[4] / 1024)):
+                self.logger.debug(f"ITERATION AMOUNT IN RRF : {math.ceil(row[4] / self.chunkSize)}, {row[4]}")
+                for i in range(math.ceil(row[4] / self.chunkSize)):
                     details = connectionSocket.recv(64).strip(b"\0")
                     detailsDecoded = json.loads(details.decode().strip())
                     
                     self.logger.debug(f"detailsDecoded = {detailsDecoded}")
                     
                     chunkData = connectionSocket.recv(detailsDecoded["chunkLength"])
-                    fileHandle.seek(detailsDecoded["chunkIndex"] * 1024)
+                    fileHandle.seek(detailsDecoded["chunkIndex"] * self.chunkSize)
                     fileHandle.write(chunkData)
             
             #Decrypting file
@@ -377,7 +374,7 @@ class Peer:
             self.logger.debug(f"CHUNK DATA : {chunkData}")
             
             #Receiving chunk
-            chunk = peerSocket.recv(1024)
+            chunk = peerSocket.recv(self.chunkSize)
             
             #Saving chunk data
             folderWritePath = os.getenv("FILE_STORAGE_PATH")

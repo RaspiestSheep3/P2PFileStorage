@@ -240,6 +240,21 @@
         background-color: var(--backgroundColour); 
     }
 
+    
+    .colourButton {
+        border : 3px solid var(--accentColour);
+        border-radius: 20px;
+        color: var(--accentColour);
+    }
+
+    #colourSchemeOptions {
+        border : 3px solid var(--mainColour);
+        border-radius: 20px;
+        padding: 5px;
+        text-align: center;
+        margin-top: 10px;
+    }
+
     .fileOverviewButton{
         border: 2px solid var(--accentColour);
         width: 200px;
@@ -250,6 +265,10 @@
     .fileOverviewButton:hover{
         font-weight: bold;
         font-size: 20px;
+    }
+
+    #settings {
+        margin-bottom: 10px;
     }
 
 </style>
@@ -281,11 +300,93 @@
             </ul>
         </div>
         <button class="displayText underlineFade" id="fileUploadButton">Upload Files</button>
+    </section> 
+    <section id="settings">
+        <div id="colourSchemeOptions">
+            <h2 class="displayText ">Colour Palette Options</h2>
+            <div id="colourButtons">
+                <div id="colourButtonsRow1" class="colourButtonsRow">
+                    <button id="colourButtonGreen" class="displayText displayButton colourButton bold underlineFade" data-color="Green">Green</button>
+                    <button id="colourButtonBlue" class="displayText displayButton colourButton bold underlineFade" data-color="Blue">Blue</button>
+                    <button id="colourButtonRed" class="displayText displayButton colourButton bold underlineFade" data-color="Red">Red</button>
+                    <button id="colourButtonGold" class="displayText displayButton colourButton bold underlineFade" data-color="Gold">Gold</button>
+                </div>
+                <div id="colourButtonsRow2" class="colourButtonsRow">
+                    <button id="colourButtonMonochrome" class="displayText displayButton colourButton bold underlineFade" data-color="Monochrome">Monochrome</button>
+                    <button id="colourButtonPink" class="displayText displayButton colourButton bold underlineFade" data-color="Pink">Pink</button>
+                    <button id="colourButtonMidnight" class="displayText displayButton colourButton bold underlineFade" data-color="Midnight">Midnight</button>
+                    <button id="colourButtonSilver" class="displayText displayButton colourButton bold underlineFade" data-color="Silver">Silver</button>
+                </div>
+            </div>
+        </div>
     </section>
 
     <script>
         //File Upload
         var fileUploadList = []
+
+        //Themes
+        var themeData = null;
+
+        async function GetThemes(){
+            try {
+                const response = await fetch('http://127.0.0.1:8888/api/GetThemes');
+                if (!response.ok) throw new Error("Network response was not OK");
+                let data = await response.json();
+                console.log("2. Data loaded:", data);
+        
+                // Code here waits for fetch to finish
+                return data;
+                
+                // Any code here will run after fetch is done
+            } catch (error) {
+                console.error("Fetch error:", error);
+            }
+        }
+
+        async function SetThemeButtons(){
+            const colourButtons = document.querySelectorAll(".colourButton");
+            colourButtons.forEach(button => {
+                button.addEventListener('click', () => {
+                    let colour = button.getAttribute('data-color');
+                    
+                    console.log(`Selected colour: ${colour}`);
+                    
+                    ChangeTheme(colour);
+                    UpdateThemePreference(colour);
+                });
+            }); 
+        }
+
+        async function UpdateThemePreference(newTheme){
+            try {
+                const response = await fetch('http://127.0.0.1:8888/api/Post/ChangeThemePreference', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({colour : newTheme})
+                });
+    
+                let data = await response.json();
+                console.log("POST Response:", data);
+            } catch (error) {
+                console.error("Error posting data:", error);
+            }
+        }
+
+        async function GetPreferences(){
+            try {
+                let response = await fetch('http://127.0.0.1:8888/api/Preferences');
+                if (!response.ok) throw new Error("Network response was not OK");
+                let data = await response.json();;
+                // Code here waits for fetch to finish
+                return data;
+                // Any code here will run after fetch is done
+            } catch (error) {
+                console.error("Fetch error:", error);
+            }
+        }
 
         async function GetFiles() {
             try {
@@ -328,12 +429,6 @@
             uploadButton.addEventListener("click", () => {
                 UploadFiles();
             });
-        }
-
-        async function Init() {
-            await GenerateFileList();
-            SetUploadFilesButton();
-            GenerateFileOverviewButtons();
         }
 
         function FileUploadDragOverHandler(ev){
@@ -464,6 +559,30 @@
             await Promise.all(uploadPromises);
             GenerateFileList();
             GenerateFileUploadList();
+        }
+
+        function ChangeTheme(newThemeColour){
+            let newBackgroundColour = themeData[newThemeColour]["background"]
+            let newMainColour = themeData[newThemeColour]["main"]
+            let newAccentColour = themeData[newThemeColour]["accent"]
+
+            //Updating CSS
+            document.documentElement.style.setProperty("--backgroundColour", newBackgroundColour);
+            document.documentElement.style.setProperty("--mainColour", newMainColour);
+            document.documentElement.style.setProperty("--accentColour", newAccentColour);
+        }
+
+        async function Init() {
+            await GenerateFileList();
+            SetUploadFilesButton();
+            GenerateFileOverviewButtons();
+
+            preferencesData = await GetPreferences();
+            themeData = await GetThemes(); 
+            await SetThemeButtons();
+
+            //Setting chosen theme
+            ChangeTheme(preferencesData["Theme"])
         }
 
         Init();
