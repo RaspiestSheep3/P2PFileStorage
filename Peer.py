@@ -17,32 +17,30 @@ from flask_cors import CORS
 import requests
 
 waitingForFiles = True
-deviceName = datetime.now().strftime("%H:%M:%S")
-userCode = input("USER CODE : ") #!TEMP
+clearUserCode = input("USER CODE (FOR CLEARING DATA) : ") #!TEMP
 testPort = int(input("TARGET PORT : ")) #!TEMP
-password = input("PASSWORD : ") #!TEMP
 frontendPort = int(input("FRONTEND PORT : ")) #!TEMP
 
 #!TEMP
 if(input("SHOULD DELETE FILES? : ").strip().upper() == "Y"):
-    if(os.path.exists(f"Peer{userCode}General.log")):
-        os.remove(f"Peer{userCode}General.log")
-    if(os.path.exists(f"Peer{userCode}Errors.log")):
-        os.remove(f"Peer{userCode}Errors.log")
-    if(os.path.exists(f"Peer{userCode}FileDatabse.db")):
-        os.remove(f"Peer{userCode}FileDatabse.db")
+    if(os.path.exists(f"Peer{clearUserCode}General.log")):
+        os.remove(f"Peer{clearUserCode}General.log")
+    if(os.path.exists(f"Peer{clearUserCode}Errors.log")):
+        os.remove(f"Peer{clearUserCode}Errors.log")
+    if(os.path.exists(f"Peer{clearUserCode}FileDatabse.db")):
+        os.remove(f"Peer{clearUserCode}FileDatabse.db")
 
 #Setting up .env
 load_dotenv(dotenv_path=".env.peer")
 sslCertificateLocation = os.getenv("SSL_CERTIFICATE_LOCATION")
 
 class Peer:
-    def __init__(self, signalingServerHost='127.0.0.1', signalingServerPort=12345, name=""):
+    def __init__(self, signalingServerHost='127.0.0.1', signalingServerPort=12345, userCode = "", password= ""):
         self.signalingServerHost = signalingServerHost
         self.signalingServerPort = signalingServerPort
-        self.name = name
         self.peerSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.chunkSize = None
+        self.userCode = userCode
 
         #*LOGGING
         # Create a colored formatter for console output
@@ -111,7 +109,7 @@ class Peer:
 
     def SetupSQL(self):
         try:
-            databaseConnection = sqlite3.connect(f'Peer{userCode}FileDatabse.db')
+            databaseConnection = sqlite3.connect(f'Peer{self.userCode}FileDatabse.db')
             cursor = databaseConnection.cursor()
             
             cursor.execute('''
@@ -136,7 +134,7 @@ class Peer:
             self.peerSocket.connect((self.signalingServerHost, self.signalingServerPort))
 
             # Send peer info with dynamically assigned port
-            myInfo = {'ip': "127.0.0.1", 'port': self.listenPort, 'name': self.name, 'joinType': 'receiver','userCode' : userCode}
+            myInfo = {'ip': "127.0.0.1", 'port': self.listenPort, 'joinType': 'receiver','userCode' : self.userCode}
             self.logger.info(f"Sending peer info: {myInfo}")
             self.peerSocket.send(json.dumps(myInfo).encode())
 
@@ -151,7 +149,7 @@ class Peer:
             peers = json.loads(peers)  # Convert the JSON string into a Python dictionary
             self.logger.debug(f"Processed peer list: {peers}")
             for peer in peers:
-                self.logger.debug(f"Connected peer's name: {(peers[peer])['name']}")
+                self.logger.debug(f"Connected peer's usercode: {(peers[peer])['userCode']}")
 
             self.peerSocket.close()
             return peers
@@ -170,7 +168,7 @@ class Peer:
             fileName, fileExtension = os.path.splitext(filePathBase)
             
             #Sending request to send files
-            serverSocket.send(json.dumps({"type" : "uploadPing", "userCode" : userCode}).encode())
+            serverSocket.send(json.dumps({"type" : "uploadPing", "userCode" : self.userCode}).encode())
             response = json.loads(serverSocket.recv(64).decode())
             if (response) and (response["type"] == "uploadPong") and (response["status"] == "accept"):
                 #We can send files      
@@ -218,7 +216,7 @@ class Peer:
                 fileIDMessage = json.loads(serverSocket.recv(64).decode().rstrip("\0"))
                 self.logger.debug(f"FILE ID MESSAGE : {fileIDMessage}")
                 
-                databaseConnection = sqlite3.connect(f'Peer{userCode}FileDatabse.db')
+                databaseConnection = sqlite3.connect(f'Peer{self.userCode}FileDatabse.db')
                 cursor = databaseConnection.cursor()
                 
                 cursor.execute("INSERT INTO fileNameTracker (fileID, fileUserName, fileName, fileExtension, fileSize, nonceList) VALUES (?, ?, ?, ?, ?, ?)", (fileIDMessage["fileID"], fileNameUser, fileName, fileExtension, os.path.getsize(ciphertextFilePath), b",".join(nonceList)))
@@ -237,7 +235,7 @@ class Peer:
     def ReceiveReturnFile(self, fileID, connectionSocket):
         try:
             #Creating file
-            databaseConn = sqlite3.connect(f'Peer{userCode}FileDatabse.db')
+            databaseConn = sqlite3.connect(f'Peer{self.userCode}FileDatabse.db')
             cursor = databaseConn.cursor()
             cursor.execute("SELECT * FROM fileNameTracker WHERE fileID = ?", (fileID,))
             row = cursor.fetchone()
@@ -330,7 +328,7 @@ class Peer:
                     folderStoragePath = os.getenv("FILE_STORAGE_PATH")
                     
                     #!TEMP - REMOVE USER CODE AT START
-                    with open(f"{folderStoragePath}/{userCode}--CODE-{targetUserCode}--INDEX-{chunkIndex}--FILEID-{fileID}.bin", "rb") as fileHandle:
+                    with open(f"{folderStoragePath}/{self.userCode}--CODE-{targetUserCode}--INDEX-{chunkIndex}--FILEID-{fileID}.bin", "rb") as fileHandle:
                         chunkData = fileHandle.read()
                         peerSocket.send(chunkData)
                     
@@ -349,7 +347,7 @@ class Peer:
             chunkIndex = message["chunkIndex"]
             
             #Finding file
-            folderPath = folderStoragePath = os.getenv("FILE_STORAGE_PATH")
+            folderPath = os.getenv("FILE_STORAGE_PATH")
             files = [f for f in os.listdir(folderPath) if os.path.isfile(os.path.join(folderPath, f))]
             
             for file in files[:]:
@@ -380,7 +378,7 @@ class Peer:
             folderWritePath = os.getenv("FILE_STORAGE_PATH")
             
             #!REMOVE THE USERCODE PHRASE - FOR TESTING
-            with open(f'{folderWritePath}/{userCode}--CODE-{chunkData["userCode"]}--INDEX-{chunkData["chunkIndex"]}--FILEID-{chunkData["fileID"]}.bin', "wb") as fileHandle:
+            with open(f'{folderWritePath}/{self.userCode}--CODE-{chunkData["userCode"]}--INDEX-{chunkData["chunkIndex"]}--FILEID-{chunkData["fileID"]}.bin', "wb") as fileHandle:
                 fileHandle.write(chunk) 
         except Exception as e:
                    self.logger.error(f"Error {e} in RecieveChunk", exc_info=True)
@@ -388,7 +386,7 @@ class Peer:
     
     def DisplayFiles(self):
         try:
-            conn = sqlite3.connect(f"Peer{userCode}FileDatabse.db")
+            conn = sqlite3.connect(f"Peer{self.userCode}FileDatabse.db")
             cursor = conn.cursor()
             cursor.execute(f"SELECT * FROM fileNameTracker")
             rows = cursor.fetchall()
@@ -404,7 +402,7 @@ class Peer:
     def RequestFile(self, fileUserName):
         try:
             #Finding actual code in database
-            conn = sqlite3.connect(f"Peer{userCode}FileDatabse.db")
+            conn = sqlite3.connect(f"Peer{self.userCode}FileDatabse.db")
             cursor = conn.cursor()
             cursor.execute("SELECT fileID FROM fileNameTracker WHERE fileUserName = ?", (fileUserName,))
             fileID = cursor.fetchone()[0]
@@ -422,7 +420,7 @@ class Peer:
     def DeleteFile(self, fileUserName):
         try:
             #Finding actual code in database
-            conn = sqlite3.connect(f"Peer{userCode}FileDatabse.db")
+            conn = sqlite3.connect(f"Peer{self.userCode}FileDatabse.db")
             cursor = conn.cursor()
             cursor.execute("SELECT fileID FROM fileNameTracker WHERE fileUserName = ?", (fileUserName,))
             fileID = cursor.fetchone()[0]
@@ -442,7 +440,7 @@ class Peer:
     
     def GetFileList(self):
         try:
-            conn = sqlite3.connect(f"Peer{userCode}FileDatabse.db")
+            conn = sqlite3.connect(f"Peer{self.userCode}FileDatabse.db")
             cursor = conn.cursor()
             cursor.execute(f"SELECT * FROM fileNameTracker")
             rows = cursor.fetchall()
@@ -466,9 +464,10 @@ loginPreferencesJSONLock = threading.Lock()
 
 @app.route('/api/Post/SendLoginRequest', methods=['POST'])
 def SendLoginRequest():
+    global peer
     try:
         data = request.json
-        peer.logger.debug(f"Received data SendLoginRequest: {data}")
+        print(f"Received data SendLoginRequest: {data}")
         
         # Check if the request contains the expected keys
         if 'username' not in data or 'password' not in data:
@@ -481,11 +480,25 @@ def SendLoginRequest():
         )
         
         print(f"RESPONSE JSON {response.json()}, {type(response.json)}")
-        return jsonify({"status": response.json()["status"]})
+        
+        status = response.json()["status"]
+        
+        if(status == "True"):
+            try:
+                #Setting up the peer
+                peer = Peer(userCode=response.json()["userCode"], password=data["password"])
+                peer.logger.info("SETTING UP PEER")
+                peer.connectToServer()
+                threading.Thread(target = peer.WaitToReceiveChunks, daemon=True).start()
+                peer.logger.info("PEER SET UP")
+            except Exception as e:
+                peer.logger.info(f"Error {e} in PEER SETUP")
+                
+        return jsonify({"status": status})
     
     except Exception as e:
         peer.logger.error(f"Error {e} in SendLoginRequest", exc_info=True)
-        return jsonify({"Unexpected error - check logs"}), 500
+        return jsonify({"status" : "Unexpected error - check logs"}), 500
 
 @app.route('/api/GetFiles', methods=['GET'])
 def GetFiles():
@@ -512,9 +525,10 @@ def ReturnThemeJSON():
 
 @app.route('/api/Post/CreateAccount', methods=['POST'])
 def CreateAccount():
+    global peer
     try:
         data = request.json
-        peer.logger.debug(f"Received data CreateAccount: {data}")
+        print(f"Received data CreateAccount: {data}")
         
         # Check if the request contains the expected keys
         if 'username' not in data or 'password' not in data:
@@ -527,7 +541,21 @@ def CreateAccount():
         )
         
         print(f"RESPONSE JSON {response.json()}, {type(response.json)}")
-        return jsonify({"status": response.json()["status"]})
+        
+        status = response.json()["status"]
+        
+        if(status == "True"):
+            try:
+                #Setting up the peer
+                peer = Peer(userCode=response.json()["userCode"], password=data["password"])
+                peer.logger.info("SETTING UP PEER")
+                peer.connectToServer()
+                threading.Thread(target = peer.WaitToReceiveChunks, daemon=True).start()
+                peer.logger.info("PEER SET UP")
+            except Exception as e:
+                peer.logger.info(f"Error {e} in PEER SETUP")
+            
+        return jsonify({"status": status})
     
     except Exception as e:
         peer.logger.error(f"Error {e} in CreateAccount", exc_info=True)
@@ -613,14 +641,27 @@ def RequestFile():
     
     return jsonify({"status" : "success"})
 
+@app.route('/api/GetUserCode', methods=['GET'])
+def GetUserCode():
+    try:
+        return jsonify({"userCode" : peer.userCode}) 
+    
+    except FileNotFoundError:
+        return jsonify({"error": "Preferences.json not found"}), 404
+    
+    except json.JSONDecodeError:
+        return jsonify({"error": "Preferences.json is not valid JSON"}), 500
+
 if __name__ == '__main__':
     
-    peer = Peer(name=deviceName)
-    peers = peer.connectToServer()
-    threading.Thread(target = peer.WaitToReceiveChunks, daemon=True).start()
+    #peer = Peer()
+    #peers = peer.connectToServer()
+    
+    peer = None
     #Starting website
     threading.Thread(target = app.run, kwargs={"port": int(frontendPort), "debug": False}).start()
-    while(True):
+    
+    """while(True):
         stateInput = input("(S)end, (W)ait, (D)isplay, (E)rase or (R)equest? : ")
         if(stateInput.strip().upper() == "S"):  
             peer.SendFile("TestFile.txt", "TestFile")
@@ -630,6 +671,6 @@ if __name__ == '__main__':
         elif(stateInput.strip().upper() == "R"):
             peer.RequestFile(input("What is the file name you are requesting? : "))
         elif(stateInput.strip().upper() == "E"):
-            peer.DeleteFile(input("What is the file name you want to delete : "))
+            peer.DeleteFile(input("What is the file name you want to delete : ")) """
     
     

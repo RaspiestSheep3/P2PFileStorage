@@ -404,6 +404,26 @@
             }
         }
 
+        async function SetUserCodeDisplay(){
+            try {
+                const response = await fetch('http://127.0.0.1:8888/api/GetUserCode');
+                if (!response.ok) throw new Error("Network response was not OK");
+                const data = await response.json();
+                
+                console.log("Usercode fetched:", data);
+                // Code here waits for fetch to finish
+                userCode = data["userCode"]
+
+                let userCodeDisplay = document.getElementById("userCodeDisplay");
+
+                userCodeDisplay.textContent = `USER CODE : ${userCode}`;
+                
+                // Any code here will run after fetch is done
+            } catch (error) {
+                console.error("Fetch error:", error);
+            }
+        }
+
 
         async function GenerateFileList(){
             const fileList = document.getElementById("filesStoredList");
@@ -573,6 +593,7 @@
         }
 
         async function Init() {
+            await SetUserCodeDisplay();
             await GenerateFileList();
             SetUploadFilesButton();
             GenerateFileOverviewButtons();

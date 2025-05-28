@@ -713,7 +713,7 @@ class SignalingServer:
                 
                 if(response):
                     #Likely peer is still connected
-                    self.logger.info(f"{self.peers[peer]['name']} is still connected")
+                    self.logger.info(f"{self.peers[peer]['userCode']} is still connected")
                 else:
                     #Possible they have disconnected
                     self.logger.info("No response received. Peer may be disconnected.")
