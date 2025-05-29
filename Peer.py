@@ -15,11 +15,10 @@ from dotenv import load_dotenv
 from flask import Flask, jsonify, Response, request
 from flask_cors import CORS
 import requests
+from werkzeug.utils import secure_filename
 
 waitingForFiles = True
 clearUserCode = input("USER CODE (FOR CLEARING DATA) : ") #!TEMP
-testPort = int(input("TARGET PORT : ")) #!TEMP
-frontendPort = int(input("FRONTEND PORT : ")) #!TEMP
 
 #!TEMP
 if(input("SHOULD DELETE FILES? : ").strip().upper() == "Y"):
@@ -41,6 +40,8 @@ class Peer:
         self.peerSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.chunkSize = None
         self.userCode = userCode
+        self.port = None
+        self.frontendPort = None
 
         #*LOGGING
         # Create a colored formatter for console output
@@ -79,12 +80,10 @@ class Peer:
         self.logger.addHandler(self.errorLogHandler)
         
         self.SetupSQL()
-                
-        #!TESTING
-        self.logger.debug(f"TEST PORT : {testPort}")
         
         #Setting up .env and json 
         self.encryptionIterations = int(os.getenv("ENCRYPTION_ITERATIONS"))
+        self.port = int(os.getenv("PORT"))
         
         self.encryptionSalt = userCode.encode("utf-8")
         self.kdf = PBKDF2HMAC(
@@ -99,7 +98,7 @@ class Peer:
     
         # Start listening for file transfer before registering with the server
         self.listenerSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.listenerSocket.bind(('127.0.0.1', testPort)) 
+        self.listenerSocket.bind(('127.0.0.1', self.port)) 
         self.listenerSocket.listen(5)  # Up to 5 queued connections
         self.listenPort = self.listenerSocket.getsockname()[1]
 
@@ -459,6 +458,7 @@ CORS(app)  # Allows cross-origin requests
 themesJSONLocation = os.getenv("THEME_JSON_LOCATION")
 loginPreferencesJSONLocation = os.getenv("LOGIN_PREFERENCE_JSON_LOCATION")
 uploadFileBufferFolder = os.getenv("UPLOAD_BUFFER_LOCATION")
+frontendPort = os.getenv("FRONTEND_PORT")
 
 loginPreferencesJSONLock = threading.Lock()
 
@@ -607,6 +607,9 @@ def Upload():
     basename, _ = os.path.splitext(uploadedFile.filename)
     
     print(f"RECEIVED A FILE : {filename}")
+    
+    #Cleansing the filename to stop directory attacks
+    filename = secure_filename(filename)
     
     #Creating a buffer file
     with open(uploadFileBufferFolder + filename, "wb") as fileHandle:
