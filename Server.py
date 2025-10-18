@@ -9,23 +9,12 @@ import os
 import math
 import logging
 import colorlog
-from Debug import ResetSystem
 from flask import Flask, jsonify, Response, request
 from flask_cors import CORS
 import csv  
 from dotenv import load_dotenv, dotenv_values
 import bcrypt
 
-#!TEMP
-if(input("SHOULD RESET FOLDERS (Y/N): ").strip().upper() == "Y"):
-    ResetSystem.ClearFolders([r"C:\Users\iniga\OneDrive\Programming\P2P Storage\Files To Send",r"C:\Users\iniga\OneDrive\Programming\P2P Storage\Received Files", r"C:\Users\iniga\OneDrive\Programming\P2P Storage\Files To Return"])
-
-#!TEMP
-if(os.path.exists(f"ServerGeneral.log")):
-    os.remove("PeersP2PStorage.db")
-    os.remove(f"ServerGeneral.log")
-    os.remove(f"ServerErrors.log")
-    
 #Setting up .env
 load_dotenv(dotenv_path=".env.server")
 sslCertificateLocation = os.getenv("SSL_CERTIFICATE_LOCATION")
@@ -1068,7 +1057,7 @@ class SignalingServer:
             self.logger.error(f"Error {e} in DistributeFileToPeers", exc_info=True)
         finally:
             conn.close()
-            return chunksSent
+        return chunksSent
         
     def AcceptFileFromPeer(self, userCode, pConnection):
         try:
@@ -1399,4 +1388,5 @@ if __name__ == '__main__':
     
     #Starting website
     #print(sslCertificateLocation + "/cert.pem")
-    app.run(port=5000, debug=False, ssl_context=(sslCertificateLocation +'/cert.pem', sslCertificateLocation + '/key.pem'))
+    #app.run(port=5000, debug=False, ssl_context=(sslCertificateLocation +'/cert.pem', sslCertificateLocation + '/cert.pem'))
+    app.run(port=5000, debug=False, ssl_context = (sslCertificateLocation +'/cert.pem', sslCertificateLocation + '/cert.key'))

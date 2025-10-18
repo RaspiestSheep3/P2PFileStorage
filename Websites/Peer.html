@@ -334,7 +334,7 @@
 
         async function GetThemes(){
             try {
-                const response = await fetch('http://127.0.0.1:8888/api/GetThemes');
+                const response = await fetch('https://127.0.0.1:8888/api/GetThemes');
                 if (!response.ok) throw new Error("Network response was not OK");
                 let data = await response.json();
                 console.log("2. Data loaded:", data);
@@ -364,7 +364,7 @@
 
         async function UpdateThemePreference(newTheme){
             try {
-                const response = await fetch('http://127.0.0.1:8888/api/Post/ChangeThemePreference', {
+                const response = await fetch('https://127.0.0.1:8888/api/Post/ChangeThemePreference', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
@@ -381,7 +381,7 @@
 
         async function GetPreferences(){
             try {
-                let response = await fetch('http://127.0.0.1:8888/api/Preferences');
+                let response = await fetch('https://127.0.0.1:8888/api/Preferences');
                 if (!response.ok) throw new Error("Network response was not OK");
                 let data = await response.json();;
                 // Code here waits for fetch to finish
@@ -394,7 +394,7 @@
 
         async function GetFiles() {
             try {
-                const response = await fetch('http://127.0.0.1:8888/api/GetFiles');
+                const response = await fetch('https://127.0.0.1:8888/api/GetFiles');
                 if (!response.ok) throw new Error("Network response was not OK");
                 const data = await response.json();
                 
@@ -410,7 +410,7 @@
 
         async function SetUserCodeDisplay(){
             try {
-                const response = await fetch('http://127.0.0.1:8888/api/GetUserCode');
+                const response = await fetch('https://127.0.0.1:8888/api/GetUserCode');
                 if (!response.ok) throw new Error("Network response was not OK");
                 const data = await response.json();
                 
@@ -511,7 +511,7 @@
             try {
                 let formData = new FormData();
                 formData.append("file", file)
-                const response = await fetch('http://127.0.0.1:8888/api/Post/UploadFile', {
+                const response = await fetch('https://127.0.0.1:8888/api/Post/UploadFile', {
                     method: 'POST',
                     body: formData
                 });
@@ -527,7 +527,7 @@
 
         async function DeleteFile(filename){
             try {
-                const response = await fetch('http://127.0.0.1:8888/api/Post/DeleteFile', {
+                const response = await fetch('https://127.0.0.1:8888/api/Post/DeleteFile', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
@@ -547,7 +547,7 @@
         
         async function RequestFile(filename){
             try {
-                const response = await fetch('http://127.0.0.1:8888/api/Post/RequestFile', {
+                const response = await fetch('https://127.0.0.1:8888/api/Post/RequestFile', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'

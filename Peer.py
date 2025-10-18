@@ -18,16 +18,6 @@ import requests
 from werkzeug.utils import secure_filename
 
 waitingForFiles = True
-clearUserCode = input("USER CODE (FOR CLEARING DATA) : ") #!TEMP
-
-#!TEMP
-if(input("SHOULD DELETE FILES? : ").strip().upper() == "Y"):
-    if(os.path.exists(f"Peer{clearUserCode}General.log")):
-        os.remove(f"Peer{clearUserCode}General.log")
-    if(os.path.exists(f"Peer{clearUserCode}Errors.log")):
-        os.remove(f"Peer{clearUserCode}Errors.log")
-    if(os.path.exists(f"Peer{clearUserCode}FileDatabse.db")):
-        os.remove(f"Peer{clearUserCode}FileDatabse.db")
 
 #Setting up .env
 load_dotenv(dotenv_path=".env.peer")
@@ -476,7 +466,7 @@ def SendLoginRequest():
         response = requests.post(
             "https://localhost:5000/LoginRequest",
             json = data,
-            verify=sslCertificateLocation + "/cert.pem"
+            verify=False
         )
         
         print(f"RESPONSE JSON {response.json()}, {type(response.json)}")
@@ -537,7 +527,7 @@ def CreateAccount():
         response = requests.post(
             "https://localhost:5000/AccountCreationRequest",
             json = data,
-            verify=sslCertificateLocation + "/cert.pem"
+            verify=False
         )
         
         print(f"RESPONSE JSON {response.json()}, {type(response.json)}")
@@ -662,7 +652,7 @@ if __name__ == '__main__':
     
     peer = None
     #Starting website
-    threading.Thread(target = app.run, kwargs={"port": int(frontendPort), "debug": False}).start()
+    threading.Thread(target = app.run, kwargs={"port": int(frontendPort), "debug": False, "ssl_context" : (sslCertificateLocation +'/cert.pem', sslCertificateLocation + '/cert.key')}).start()
     
     """while(True):
         stateInput = input("(S)end, (W)ait, (D)isplay, (E)rase or (R)equest? : ")
